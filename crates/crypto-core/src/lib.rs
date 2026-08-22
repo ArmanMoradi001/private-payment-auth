@@ -7,9 +7,13 @@
 #![warn(missing_docs)]
 
 pub mod digest;
+pub mod encoding;
 pub mod error;
+pub mod hash;
 pub mod secret;
 
 pub use digest::{Digest, DIGEST_LEN};
+pub use encoding::CanonicalEncode;
 pub use error::CryptoCoreError;
+pub use hash::{HashFunction, Sha256Hash};
 pub use secret::SecretBytes;
