@@ -1,3 +1,21 @@
+[package]
+name = "payment-infra"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[test]]
+name = "smoke"
+path = "tests/integration/smoke.rs"
+
+[[bench]]
+name = "dummy_bench"
+path = "benches/dummy_bench.rs"
+harness = false
