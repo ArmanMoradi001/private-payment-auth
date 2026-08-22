@@ -21,6 +21,14 @@ impl SecretBytes {
         &self.0
     }
 
+    /// Mutably borrows the secret contents.
+    ///
+    /// Callers must overwrite this buffer with fresh secret material;
+    /// it is zeroized on drop regardless.
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.0
+    }
+
     /// Returns the length of the secret in bytes.
     pub fn len(&self) -> usize {
         self.0.len()

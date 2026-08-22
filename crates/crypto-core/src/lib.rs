@@ -6,12 +6,15 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod commitment;
 pub mod digest;
 pub mod encoding;
 pub mod error;
 pub mod hash;
+pub mod random;
 pub mod secret;
 
+pub use commitment::{commit, open, Commitment, CommitmentRandomness, RANDOMNESS_LEN};
 pub use digest::{Digest, DIGEST_LEN};
 pub use encoding::CanonicalEncode;
 pub use error::CryptoCoreError;
