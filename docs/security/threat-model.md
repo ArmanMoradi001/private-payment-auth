@@ -65,8 +65,37 @@ Informal for now; formal definitions to follow after primitive selection:
 
 - Which concrete primitives (hashes, fields, commitment schemes) will be
   standardized in `crypto-core`, and under which assumptions?
+  - *Partially resolved (Phase 1)*: SHA-256 is the default hash;
+    commitments are hash-based. Formal assumptions still TBD.
 - Semi-honest or malicious security for the MPC layer at Phase 1?
 - Side-channel requirements: constant-time guarantees for which
   operations, verified how (e.g., dudect, valgrind-based tooling)?
+  - *Partially resolved (Phase 1)*: digest and commitment comparison are
+    constant-time via `subtle`; systematic verification is still open.
 - Replay protection and artifact freshness: mechanism and scope?
 - Audit and formal verification strategy for `crypto-core` and `proof`?
+
+## Secret Handling Notes (Phase 1)
+
+Current mitigations in `crypto-core`:
+
+1. **Zeroization**: all secret material lives in zeroizing containers
+   (`SecretBytes`, `CommitmentRandomness`, both `#[derive(Zeroize,
+   ZeroizeOnDrop)]`). Buffers are wiped on drop even on error paths —
+   e.g., a partially filled randomness buffer from a failed RNG is still
+   zeroized.
+2. **Redaction in logs**: secret types implement `Debug`/`Display` that
+   print only placeholders (`SecretBytes([REDACTED])`,
+   `CommitmentRandomness([REDACTED])`). Formatting a secret with `{:?}`
+   can never emit its contents; this is enforced by unit tests.
+3. **Constant-time comparison**: digests and commitments compare via
+   `subtle::ConstantTimeEq`; no secret-derived value is compared with
+   variable-time `==`.
+4. **No secrets in errors**: `CryptoCoreError` variants carry no payload
+   data.
+
+Remaining gaps (tracked as open questions above): side-channel testing
+tooling, memory-locking (`mlock`) is *not* used, compiler elision of
+zeroization is not formally guaranteed without volatile semantics, and
+there is no yet policy for secret lifetime bounds beyond drop-time
+wiping.
