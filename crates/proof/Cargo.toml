@@ -1,0 +1,8 @@
+[package]
+name = "proof"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mpcith = { path = "../mpcith" }
+crypto-core = { path = "../crypto-core" }

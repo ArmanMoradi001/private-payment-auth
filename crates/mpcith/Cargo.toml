@@ -1,0 +1,9 @@
+[package]
+name = "mpcith"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mpc = { path = "../mpc" }
+secret-sharing = { path = "../secret-sharing" }
+crypto-core = { path = "../crypto-core" }

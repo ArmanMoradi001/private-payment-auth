@@ -1,0 +1,9 @@
+[package]
+name = "payment"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proof = { path = "../proof" }
+policy = { path = "../policy" }
+crypto-core = { path = "../crypto-core" }
