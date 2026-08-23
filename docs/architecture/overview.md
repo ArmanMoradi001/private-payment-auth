@@ -1,8 +1,8 @@
 # Architecture Overview
 
-> **Status: Phase 0 — Repository Foundation.** No cryptographic
-> implementation has started. This document describes the *intended*
-> architecture only.
+> **Status: Phase 2 — Repository Foundation and `crypto-core` /
+> `secret-sharing`.** The primitives layer is implemented; higher layers
+> remain *intended* architecture only.
 
 ## Purpose
 
@@ -85,6 +85,34 @@ Implemented abstractions and their contracts:
 
 All operations are `#![forbid(unsafe_code)]` and error via a single
 `CryptoCoreError`.
+
+## `secret-sharing` (Phase 2)
+
+Implemented in the `secret-sharing` crate on top of `crypto-core`:
+
+- **Prime field** — shares live in the scalar field of ed25519
+  (`ark_ed25519::Fr`, `p = 2^252 + 27742317777372353535851937790883648493`)
+  via `ark-ff`. Byte↔element conversion is exact: any value at or above
+  the modulus is rejected with `SecretTooLargeForField` rather than
+  reduced.
+- **`Share`** — carries `version`, `threshold`, `share_count`,
+  `index` (non-zero), and a field-element `value`. `Debug` redacts the
+  value so shares can be logged without leaking secret material.
+- **Canonical encoding** — fixed 45-byte layout:
+  `version(1) ‖ threshold(4 BE) ‖ share_count(4 BE) ‖ index(4 BE) ‖ value(32 BE)`.
+  Decoding rejects trailing bytes, unsupported versions, zero/out-of-range
+  indices, and values ≥ p.
+- **`split(secret, t, n)`** — validates `1 < t ≤ n`, maps the secret into
+  the field (canonicalized by stripping leading zero bytes), and evaluates
+  a random degree-`(t-1)` polynomial at `x = 1..=n`.
+- **`reconstruct(shares)`** — enforces consistent metadata, distinct
+  non-zero indices, and `len ≥ t`; Lagrange-interpolates the first `t`
+  shares at `x = 0` and returns the canonical secret as `SecretBytes`.
+
+Testing: unit tests, Python-generated cross-implementation vectors
+(`tests/vectors/`), proptest round-trip/threshold properties, and
+Criterion benchmarks. See ADR [0003](../decisions/0003-secret-sharing.md)
+for design rationale.
 
 ## Key Invariants
 

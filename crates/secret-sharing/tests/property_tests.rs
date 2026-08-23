@@ -7,16 +7,19 @@ use rand_chacha::rand_core::SeedableRng;
 fn secret_strategy() -> impl Strategy<Value = SecretBytes> {
     // Non-empty secrets; leading zeros are stripped by `split`, so generate
     // secrets with a non-zero first byte to keep round-trips exact.
-    (any::<u8>(), 1usize..=32, prop::collection::vec(any::<u8>(), 0..32)).prop_map(
-        |(first, len, rest)| {
+    (
+        any::<u8>(),
+        1usize..=32,
+        prop::collection::vec(any::<u8>(), 0..32),
+    )
+        .prop_map(|(first, len, rest)| {
             let mut bytes = Vec::with_capacity(len);
             bytes.push((first % 15) + 1);
             for b in rest.into_iter().take(len - 1) {
                 bytes.push(b);
             }
             SecretBytes::new(bytes)
-        },
-    )
+        })
 }
 
 proptest! {
