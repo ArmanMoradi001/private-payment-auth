@@ -943,9 +943,13 @@ dependencies = [
  "ark-ed25519",
  "ark-ff",
  "ark-std",
+ "criterion",
  "crypto-core",
+ "proptest",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -80,7 +80,9 @@ pub fn element_to_be_bytes(element: &FieldElement) -> [u8; FIELD_ELEMENT_SIZE] {
 /// Values at or above the modulus are rejected and redrawn, so every field
 /// element is equally likely.
 pub fn random_element<R: RngCore>(rng: &mut R) -> Result<FieldElement, SecretSharingError> {
-    for _ in 0..128 {
+    // The modulus is just below 2^253, so roughly 1-in-8 draws are
+    // accepted; 1024 attempts makes the failure probability negligible.
+    for _ in 0..1024 {
         let mut buf = [0u8; FIELD_ELEMENT_SIZE];
         rng.fill_bytes(&mut buf);
         if buf < MODULUS_BE {

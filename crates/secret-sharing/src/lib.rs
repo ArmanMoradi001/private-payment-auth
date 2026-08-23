@@ -14,3 +14,4 @@ pub mod share;
 pub use error::SecretSharingError;
 pub use field::FIELD_ELEMENT_SIZE;
 pub use shamir::{reconstruct, split};
+pub use share::Share;
