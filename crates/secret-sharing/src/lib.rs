@@ -8,6 +8,9 @@
 pub mod encoding;
 pub mod error;
 pub mod field;
+pub mod shamir;
 pub mod share;
 
 pub use error::SecretSharingError;
+pub use field::FIELD_ELEMENT_SIZE;
+pub use shamir::{reconstruct, split};

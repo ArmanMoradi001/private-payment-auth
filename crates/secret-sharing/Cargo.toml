@@ -9,3 +9,6 @@ ark-ff = "0.4"
 ark-std = "0.4"
 crypto-core = { path = "../crypto-core" }
 rand_core = "0.6"
+
+[dev-dependencies]
+rand_chacha = "0.3"
