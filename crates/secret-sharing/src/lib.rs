@@ -5,7 +5,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod encoding;
 pub mod error;
 pub mod field;
+pub mod share;
 
 pub use error::SecretSharingError;
