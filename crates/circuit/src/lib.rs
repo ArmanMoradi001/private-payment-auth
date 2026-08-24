@@ -11,11 +11,14 @@ pub mod builder;
 pub mod circuit;
 pub mod encoding;
 pub mod error;
+pub mod identity;
 pub mod node;
+pub mod transcript;
 pub mod types;
 
 pub use builder::CircuitBuilder;
 pub use circuit::Circuit;
 pub use error::CircuitError;
 pub use node::Node;
+pub use transcript::{TranscriptEvent, TranscriptHook};
 pub use types::{CircuitId, NodeId};

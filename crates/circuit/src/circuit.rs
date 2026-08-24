@@ -4,7 +4,7 @@ use ark_ff::PrimeField;
 
 use crate::error::CircuitError;
 use crate::node::Node;
-use crate::types::NodeId;
+use crate::types::{CircuitId, NodeId};
 
 /// An ordered DAG of arithmetic nodes over the prime field `F`.
 ///
@@ -62,6 +62,13 @@ impl<F: PrimeField> Circuit<F> {
     /// Number of public inputs this circuit consumes at evaluation time.
     pub fn num_public_inputs(&self) -> usize {
         self.num_public_inputs
+    }
+
+    /// Computes the domain-separated semantic id of this circuit.
+    ///
+    /// See [`crate::identity`] for the construction.
+    pub fn compute_id(&self) -> CircuitId {
+        crate::identity::compute_id(self)
     }
     /// Checks all structural invariants of the circuit.
     ///
