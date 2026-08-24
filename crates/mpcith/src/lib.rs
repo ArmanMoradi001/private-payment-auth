@@ -21,6 +21,7 @@ pub mod error;
 pub mod prover;
 pub mod statement;
 pub mod types;
+pub mod verifier;
 pub mod view;
 
 /// Domain tag carried in every repetition's sharing context.
@@ -33,4 +34,5 @@ pub use error::MpcithError;
 pub use prover::{MpcithProof, MpcithProver, OpenedView, Repetition};
 pub use statement::Statement;
 pub use types::{Challenge, FieldElement, PartyId, RepetitionId, PARTY_COUNT};
+pub use verifier::{MpcithVerifier, VerificationResult};
 pub use view::{LocalOperation, PartyView, TripleShare};
