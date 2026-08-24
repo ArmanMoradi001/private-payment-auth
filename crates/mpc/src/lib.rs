@@ -16,11 +16,13 @@ pub mod arithmetic;
 pub mod context;
 pub mod error;
 pub mod sharing;
+pub mod simulator;
 pub mod triples;
 pub mod types;
 
 pub use context::ShareContext;
 pub use error::MpcError;
 pub use sharing::{reconstruct, share_input};
+pub use simulator::{MpcSimulator, TranscriptHook};
 pub use triples::{BeaverTriple, LocalTrustedTripleProvider, TripleProvider};
 pub use types::{PublicValue, Share, SharedValue};
