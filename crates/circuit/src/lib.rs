@@ -7,11 +7,14 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod builder;
 pub mod circuit;
+pub mod encoding;
 pub mod error;
 pub mod node;
 pub mod types;
 
+pub use builder::CircuitBuilder;
 pub use circuit::Circuit;
 pub use error::CircuitError;
 pub use node::Node;

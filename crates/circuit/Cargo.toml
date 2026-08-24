@@ -7,3 +7,6 @@ edition = "2021"
 ark-ff = "0.4"
 crypto-core = { path = "../crypto-core" }
 mpc = { path = "../mpc" }
+
+[dev-dependencies]
+ark-ed25519 = "0.4"

@@ -84,7 +84,8 @@ mod tests {
     fn circuit_ids_display_hex() {
         let digest = Digest::new([0xab; 32]);
         let id = CircuitId::from_digest(digest);
-        assert_eq!(format!("{id:?}").len(), "CircuitId(0x".len() + 64 + 1);
+        assert_eq!(format!("{id:?}"), format!("CircuitId({digest})"));
         assert_eq!(format!("{id}"), format!("{digest}"));
+        assert!(format!("{id:?}").ends_with(')'));
     }
 }

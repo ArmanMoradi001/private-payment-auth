@@ -249,6 +249,7 @@ dependencies = [
 name = "circuit"
 version = "0.1.0"
 dependencies = [
+ "ark-ed25519",
  "ark-ff",
  "crypto-core",
  "mpc",
