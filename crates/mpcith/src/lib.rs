@@ -20,6 +20,7 @@ pub mod encoding;
 pub mod error;
 pub mod prover;
 pub mod statement;
+pub mod transcript;
 pub mod types;
 pub mod verifier;
 pub mod view;
@@ -33,6 +34,7 @@ pub use encoding::{decode_proof, decode_view, encode_proof, encode_view, ENCODIN
 pub use error::MpcithError;
 pub use prover::{MpcithProof, MpcithProver, OpenedView, Repetition};
 pub use statement::Statement;
+pub use transcript::{MpcithTranscript, RepetitionTranscript};
 pub use types::{Challenge, FieldElement, PartyId, RepetitionId, PARTY_COUNT};
 pub use verifier::{MpcithVerifier, VerificationResult};
 pub use view::{LocalOperation, PartyView, TripleShare};

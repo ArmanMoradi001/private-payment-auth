@@ -272,10 +272,10 @@ impl MpcithVerifier {
                             {
                                 return Err(MpcithError::InvalidOpening);
                             }
-                            let z_expected = triple.c
-                                + d_claim * triple.b
-                                + e_claim * triple.a
-                                + d_claim * e_claim;
+                            let mut z_expected = triple.c + d_claim * triple.b + e_claim * triple.a;
+                            if p == 0 {
+                                z_expected += d_claim * e_claim;
+                            }
 
                             expect_op!(
                                 LocalOperation::BeaverMul {
@@ -382,4 +382,104 @@ fn node_depends_on_secrets(circuit: &Circuit<FieldElement>, id: circuit::NodeId)
     }
     let mut cache = vec![None; circuit.nodes().len()];
     walk(circuit, id.as_usize(), &mut cache)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::challenge::{ChallengeSource as _, DeterministicChallengeSource};
+    use crate::prover::MpcithProver;
+    use circuit::CircuitBuilder;
+    use mpc::PublicValue;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+
+    fn fixture() -> (Circuit<FieldElement>, Statement, Vec<FieldElement>) {
+        let mut b = CircuitBuilder::<FieldElement>::new();
+        let x = b.secret_input();
+        let c = b.constant(FieldElement::from(2u64));
+        let t = b.add(x, c).expect("valid");
+        let p = b.public_input();
+        let s = b.mul(t, p).expect("valid");
+        b.output(s).expect("valid");
+        let circuit = b.build().expect("valid");
+
+        let statement = Statement {
+            circuit_id: circuit.compute_id(),
+            public_inputs: vec![PublicValue::new(FieldElement::from(5u64))],
+            expected_outputs: vec![PublicValue::new(FieldElement::from(35u64))],
+        };
+        (circuit, statement, vec![FieldElement::from(5u64)])
+    }
+
+    #[test]
+    fn honest_proof_verifies_for_every_hidden_party() {
+        for hidden in 0u8..3 {
+            let (circuit, statement, witness) = fixture();
+            let source = DeterministicChallengeSource::repeating(PartyId::new(hidden).unwrap(), 3);
+            let mut prover = MpcithProver::new(
+                &circuit,
+                &statement,
+                witness.clone(),
+                Box::new(source),
+                ChaCha20Rng::seed_from_u64(u64::from(hidden) + 1),
+            )
+            .expect("valid");
+            let proof = prover.prove(3).expect("valid");
+            assert_eq!(
+                MpcithVerifier::new()
+                    .verify(&statement, &proof, &circuit)
+                    .expect("no error"),
+                VerificationResult::Valid
+            );
+        }
+    }
+
+    #[test]
+    fn wrong_output_is_invalid_not_error() {
+        let (circuit, statement, witness) = fixture();
+        let source = DeterministicChallengeSource::repeating(PartyId::new(0).unwrap(), 1);
+        let mut prover = MpcithProver::new(
+            &circuit,
+            &statement,
+            vec![FieldElement::from(5u64)],
+            Box::new(source),
+            ChaCha20Rng::seed_from_u64(10),
+        )
+        .expect("valid");
+        let proof = prover.prove(1).expect("valid");
+
+        let mut wrong = statement;
+        wrong.expected_outputs = vec![PublicValue::new(FieldElement::from(99u64))];
+        assert_eq!(
+            MpcithVerifier::new()
+                .verify(&wrong, &proof, &circuit)
+                .expect("no error"),
+            VerificationResult::Invalid
+        );
+    }
+
+    #[test]
+    fn tampered_commitment_fails_closed() {
+        let (circuit, statement, witness) = fixture();
+        let source = DeterministicChallengeSource::repeating(PartyId::new(0).unwrap(), 1);
+        let mut prover = MpcithProver::new(
+            &circuit,
+            &statement,
+            witness,
+            Box::new(source),
+            ChaCha20Rng::seed_from_u64(21),
+        )
+        .expect("valid");
+        let mut proof = prover.prove(1).expect("valid");
+
+        use crypto_core::Digest;
+        proof.repetitions[0].commitments[1] =
+            crate::commitment::ViewCommitment::from_digest(Digest::new([7u8; 32]));
+
+        assert!(matches!(
+            MpcithVerifier::new().verify(&statement, &proof, &circuit),
+            Err(MpcithError::CommitmentMismatch)
+        ));
+    }
 }

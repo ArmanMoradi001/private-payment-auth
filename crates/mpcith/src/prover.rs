@@ -357,7 +357,12 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
         for p in 0..3usize {
             let dp = operand(va, p) - ta[p];
             let ep = operand(vb, p) - tb[p];
-            let z = tc[p] + d * tb[p] + e * ta[p] + d * e;
+            // The public constant d·e is folded into party 0's share
+            // only; adding it everywhere would triple-count.
+            let mut z = tc[p] + d * tb[p] + e * ta[p];
+            if p == 0 {
+                z += d * e;
+            }
             parties[p].triple_shares.push(TripleShare {
                 a: ta[p],
                 b: tb[p],
