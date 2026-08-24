@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mpc = { path = "../mpc" }
-secret-sharing = { path = "../secret-sharing" }
+ark-ed25519 = "0.4"
+ark-ff = "0.4"
+circuit = { path = "../circuit" }
 crypto-core = { path = "../crypto-core" }
+mpc = { path = "../mpc" }
+rand_core = "0.6"
+
+[dev-dependencies]
+rand_chacha = "0.3"
