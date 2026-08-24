@@ -21,6 +21,7 @@ pub struct ProofRepetition {
     opened_views: Vec<PartyView>,
     opening_randomness: Vec<SecretBytes>,
     hidden_broadcasts: Vec<FieldElement>,
+    hidden_output_shares: Vec<FieldElement>,
 }
 
 impl ProofRepetition {
@@ -31,6 +32,7 @@ impl ProofRepetition {
         opened_views: Vec<PartyView>,
         opening_randomness: Vec<SecretBytes>,
         hidden_broadcasts: Vec<FieldElement>,
+        hidden_output_shares: Vec<FieldElement>,
     ) -> Self {
         Self {
             commitments,
@@ -38,6 +40,7 @@ impl ProofRepetition {
             opened_views,
             opening_randomness,
             hidden_broadcasts,
+            hidden_output_shares,
         }
     }
 
@@ -64,6 +67,12 @@ impl ProofRepetition {
     /// The hidden party's public broadcast contributions.
     pub fn hidden_broadcasts(&self) -> &[FieldElement] {
         &self.hidden_broadcasts
+    }
+
+    /// The hidden party's output shares completing the output sum
+    /// against the statement's expected outputs.
+    pub fn hidden_output_shares(&self) -> &[FieldElement] {
+        &self.hidden_output_shares
     }
 }
 

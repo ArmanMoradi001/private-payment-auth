@@ -14,6 +14,7 @@ pub mod fiat_shamir;
 pub mod proof;
 pub mod prover;
 pub mod statement;
+pub mod verifier;
 
 /// Protocol version stamped into every proof and FS derivation.
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -24,3 +25,4 @@ pub use fiat_shamir::{ChallengeGenerator, FiatShamirChallengeGenerator, FS_DOMAI
 pub use proof::{NonInteractiveProof, ProofId, ProofRepetition};
 pub use prover::Prover;
 pub use statement::Statement;
+pub use verifier::{VerificationResult, Verifier};

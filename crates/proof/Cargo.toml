@@ -10,3 +10,8 @@ mpc = { path = "../mpc" }
 rand_core = "0.6"
 crypto-core = { path = "../crypto-core" }
 mpcith = { path = "../mpcith" }
+
+[dev-dependencies]
+ark-ed25519 = "0.4"
+rand_chacha = "0.3"
+rand_core = "0.6"

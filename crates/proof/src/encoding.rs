@@ -48,6 +48,11 @@ pub fn serialize_proof(proof: &NonInteractiveProof) -> Vec<u8> {
             put_element(&mut out, value);
         }
 
+        out.extend_from_slice(&(rep.hidden_output_shares().len() as u32).to_be_bytes());
+        for value in rep.hidden_output_shares() {
+            put_element(&mut out, value);
+        }
+
         let views = rep.opened_views();
         let randomness = rep.opening_randomness();
         out.extend_from_slice(&(views.len() as u32).to_be_bytes());
@@ -123,6 +128,12 @@ fn decode_repetition(c: &mut Cursor<'_>) -> Result<ProofRepetition, ProofError> 
         hidden_broadcasts.push(read_element(c)?);
     }
 
+    let n_hidden_out = c.read_u32()? as usize;
+    let mut hidden_output_shares = Vec::with_capacity(n_hidden_out.min(1024));
+    for _ in 0..n_hidden_out {
+        hidden_output_shares.push(read_element(c)?);
+    }
+
     let n_opened = c.read_u32()? as usize;
     if n_opened != 2 {
         return Err(ProofError::MalformedEncoding);
@@ -149,6 +160,7 @@ fn decode_repetition(c: &mut Cursor<'_>) -> Result<ProofRepetition, ProofError> 
         opened_views,
         opening_randomness,
         hidden_broadcasts,
+        hidden_output_shares,
     ))
 }
 

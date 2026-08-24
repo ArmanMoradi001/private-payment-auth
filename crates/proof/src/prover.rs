@@ -107,6 +107,7 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
                     opened_views,
                     randomness,
                     rep.hidden_broadcasts,
+                    rep.hidden_output_shares,
                 )
             })
             .collect();
