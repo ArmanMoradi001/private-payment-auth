@@ -79,6 +79,12 @@ impl<F> SharedValue<F> {
         Ok(Self { shares })
     }
 
+    /// Crate-internal constructor for validated share vectors.
+    pub(crate) fn from_validated_shares(shares: Vec<Share<F>>) -> Self {
+        debug_assert!(!shares.is_empty(), "shared values are never empty");
+        Self { shares }
+    }
+
     /// Returns the per-party shares in party order.
     pub fn shares(&self) -> &[Share<F>] {
         &self.shares

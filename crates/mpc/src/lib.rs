@@ -12,12 +12,15 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod arithmetic;
 pub mod context;
 pub mod error;
 pub mod sharing;
+pub mod triples;
 pub mod types;
 
 pub use context::ShareContext;
 pub use error::MpcError;
 pub use sharing::{reconstruct, share_input};
+pub use triples::{BeaverTriple, LocalTrustedTripleProvider, TripleProvider};
 pub use types::{PublicValue, Share, SharedValue};
