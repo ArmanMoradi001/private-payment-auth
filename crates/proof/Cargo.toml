@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mpcith = { path = "../mpcith" }
+ark-ff = "0.4"
+circuit = { path = "../circuit" }
+mpc = { path = "../mpc" }
 crypto-core = { path = "../crypto-core" }
+mpcith = { path = "../mpcith" }

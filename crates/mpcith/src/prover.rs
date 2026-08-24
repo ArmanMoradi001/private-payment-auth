@@ -109,6 +109,11 @@ struct PartyState {
     opened_values: Vec<FieldElement>,
 }
 
+/// Challenge derivation hook: maps a repetition's identity and
+/// commitments to its challenge.
+pub type ChallengeDeriver<'a> =
+    dyn FnMut(RepetitionId, &[crate::ViewCommitment]) -> Result<Challenge, MpcithError> + 'a;
+
 impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
     /// Creates a prover after checking statement/witness consistency.
     ///
@@ -168,20 +173,55 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
     /// - [`MpcithError::InvalidProtocolState`] if the challenge source
     ///   is exhausted before all repetitions complete.
     pub fn prove(&mut self, repetition_count: u32) -> Result<MpcithProof, MpcithError> {
+        let mut source = std::mem::replace(
+            &mut self.challenge_source,
+            Box::new(crate::challenge::DeterministicChallengeSource::default()),
+        );
+        let result = self.prove_with(repetition_count, |_, _| source.next_challenge());
+        self.challenge_source = source;
+        result
+    }
+
+    /// Like [`Self::prove`], but challenges are derived by the supplied
+    /// closure from each repetition's identity and commitments. This is
+    /// the hook used by Fiat–Shamir transforms: the challenge becomes a
+    /// deterministic function of everything committed so far.
+    ///
+    /// The closure receives `(repetition_id, commitments)` and must
+    /// return the challenge; it is invoked exactly once per repetition,
+    /// after that repetition's commitments exist and before any view is
+    /// opened.
+    ///
+    /// # Errors
+    ///
+    /// - [`MpcithError::InvalidRepetitionCount`] if the count is zero.
+    /// - Any error propagated from `challenge_of`.
+    pub fn prove_with(
+        &mut self,
+        repetition_count: u32,
+        mut challenge_of: impl FnMut(
+            RepetitionId,
+            &[crate::ViewCommitment],
+        ) -> Result<Challenge, MpcithError>,
+    ) -> Result<MpcithProof, MpcithError> {
         if repetition_count == 0 {
             return Err(MpcithError::InvalidRepetitionCount);
         }
 
         let mut repetitions = Vec::with_capacity(repetition_count as usize);
         for index in 0..repetition_count {
-            repetitions.push(self.prove_repetition(RepetitionId::new(index))?);
+            repetitions.push(self.prove_repetition(RepetitionId::new(index), &mut challenge_of)?);
         }
         Ok(MpcithProof { repetitions })
     }
 
     /// Executes one full repetition end-to-end.
     #[allow(clippy::too_many_lines)]
-    fn prove_repetition(&mut self, id: RepetitionId) -> Result<Repetition, MpcithError> {
+    fn prove_repetition(
+        &mut self,
+        id: RepetitionId,
+        challenge_of: &mut ChallengeDeriver<'_>,
+    ) -> Result<Repetition, MpcithError> {
         // A fresh per-repetition sharing context (3 parties, execution
         // id bound to this repetition). Shares here are drawn directly
         // via share3(); the context documents the domain binding.
@@ -303,7 +343,9 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
         }
 
         // 6. Challenge decides which single view stays hidden.
-        let challenge = self.challenge_source.next_challenge()?;
+        // 6. Challenge decides which single view stays hidden; it is
+        // derived from this repetition's commitments by the caller.
+        let challenge = challenge_of(id, &commitments)?;
         let hidden = challenge.hidden_party.get() as usize;
 
         // 7. Open the two non-hidden views with their randomness.
