@@ -229,9 +229,8 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
                     let (va, vb) = (&values[a.as_usize()], &values[b.as_usize()]);
                     if !va.shared() && !vb.shared() {
                         NodeVal::Public(va.public_part() + vb.public_part())
-                    } else {
-                        // Mixed adds fold the public operand into each
-                        // party's share locally.
+                    } else if va.shared() && vb.shared() {
+                        // Fully shared: share-wise addition.
                         let mut shares = [FieldElement::zero(); 3];
                         for p in 0..3usize {
                             let sum = operand(va, p) + operand(vb, p);
@@ -240,6 +239,31 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
                                 share: sum,
                             });
                             shares[p] = sum;
+                        }
+                        NodeVal::Shared(shares)
+                    } else {
+                        // Mixed shared + public: the public value is
+                        // absorbed by *one* party's share only, so the
+                        // sum increases by exactly v (adding it to all
+                        // three shares would inject 3·v).
+                        let public_val = if va.shared() {
+                            vb.public_part()
+                        } else {
+                            va.public_part()
+                        };
+                        let shared_val = if va.shared() { va } else { vb };
+                        let mut shares = [FieldElement::zero(); 3];
+                        for p in 0..3usize {
+                            if p == 0 {
+                                let sum = operand(shared_val, 0) + public_val;
+                                parties[0].local_operations.push(LocalOperation::Add {
+                                    output: out,
+                                    share: sum,
+                                });
+                                shares[0] = sum;
+                            } else {
+                                shares[p] = operand(shared_val, p);
+                            }
                         }
                         NodeVal::Shared(shares)
                     }

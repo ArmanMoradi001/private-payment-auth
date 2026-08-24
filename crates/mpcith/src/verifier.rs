@@ -216,7 +216,7 @@ impl MpcithVerifier {
                     let vb = values[b.as_usize()];
                     match (va, vb) {
                         (NodeVal::Public(x), NodeVal::Public(y)) => NodeVal::Public(x + y),
-                        _ => {
+                        (NodeVal::Shared(_), NodeVal::Shared(_)) => {
                             let expected = va.as_field(p) + vb.as_field(p);
                             expect_op!(
                                 LocalOperation::Add { output, share },
@@ -225,6 +225,28 @@ impl MpcithVerifier {
                                 }
                             );
                             NodeVal::Shared(expected)
+                        }
+                        // Mixed shared + public: only party 0 absorbs
+                        // the public value and records an operation;
+                        // other parties keep their share unchanged.
+                        _ => {
+                            if p == 0 {
+                                let expected = va.as_field(0) + vb.as_field(0);
+                                expect_op!(
+                                    LocalOperation::Add { output, share },
+                                    if *output != out || *share != expected {
+                                        return Err(MpcithError::InconsistentView);
+                                    }
+                                );
+                                NodeVal::Shared(expected)
+                            } else {
+                                match (va, vb) {
+                                    (NodeVal::Shared(s), _) | (_, NodeVal::Shared(s)) => {
+                                        NodeVal::Shared(s)
+                                    }
+                                    _ => return Err(MpcithError::InvalidOperation),
+                                }
+                            }
                         }
                     }
                 }
@@ -387,7 +409,7 @@ fn node_depends_on_secrets(circuit: &Circuit<FieldElement>, id: circuit::NodeId)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::challenge::{ChallengeSource as _, DeterministicChallengeSource};
+    use crate::challenge::DeterministicChallengeSource;
     use crate::prover::MpcithProver;
     use circuit::CircuitBuilder;
     use mpc::PublicValue;
@@ -437,7 +459,7 @@ mod tests {
 
     #[test]
     fn wrong_output_is_invalid_not_error() {
-        let (circuit, statement, witness) = fixture();
+        let (circuit, statement, _witness) = fixture();
         let source = DeterministicChallengeSource::repeating(PartyId::new(0).unwrap(), 1);
         let mut prover = MpcithProver::new(
             &circuit,
