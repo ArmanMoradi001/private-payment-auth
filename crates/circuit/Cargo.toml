@@ -1,0 +1,9 @@
+[package]
+name = "circuit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff = "0.4"
+crypto-core = { path = "../crypto-core" }
+mpc = { path = "../mpc" }

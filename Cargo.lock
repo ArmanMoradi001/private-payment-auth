@@ -246,6 +246,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "circuit"
+version = "0.1.0"
+dependencies = [
+ "ark-ff",
+ "crypto-core",
+ "mpc",
+]
+
+[[package]]
 name = "clap"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -573,7 +582,12 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "mpc"
 version = "0.1.0"
 dependencies = [
+ "ark-ed25519",
+ "ark-ff",
+ "ark-std",
  "crypto-core",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
  "secret-sharing",
 ]
 
