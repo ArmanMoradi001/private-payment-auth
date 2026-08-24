@@ -1,0 +1,63 @@
+{
+  "domain": "private-payment-auth/mpcith/fs/v1",
+  "cases": [
+    {
+      "label": "canonical_fixture",
+      "version": 1,
+      "repetition_id": 0,
+      "circuit_id": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "public_inputs": [
+        "0000000000000000000000000000000000000000000000000000000000000005"
+      ],
+      "expected_outputs": [
+        "0000000000000000000000000000000000000000000000000000000000000034"
+      ],
+      "commitments": [
+        "1111111111111111111111111111111111111111111111111111111111111111",
+        "2222222222222222222222222222222222222222222222222222222222222222",
+        "3333333333333333333333333333333333333333333333333333333333333333"
+      ],
+      "expected_digest": "3cad148a78bdef25eb22ce1d3cc144ebb49d1a9046d2098750a67248d67e3901",
+      "expected_hidden_party": 0
+    },
+    {
+      "label": "different_repetition_id",
+      "version": 1,
+      "repetition_id": 1,
+      "circuit_id": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "public_inputs": [
+        "0000000000000000000000000000000000000000000000000000000000000005"
+      ],
+      "expected_outputs": [
+        "0000000000000000000000000000000000000000000000000000000000000034"
+      ],
+      "commitments": [
+        "1111111111111111111111111111111111111111111111111111111111111111",
+        "2222222222222222222222222222222222222222222222222222222222222222",
+        "3333333333333333333333333333333333333333333333333333333333333333"
+      ],
+      "expected_digest": "03c17e469a70335e67d109ac478250d41efd39de05e60a804a1293f95961809d",
+      "expected_hidden_party": 0
+    },
+    {
+      "label": "multi_value_statement",
+      "version": 1,
+      "repetition_id": 42,
+      "circuit_id": "abababababababababababababababababababababababababababababababab",
+      "public_inputs": [
+        "000000000000000000000000000000000000000000000000000000000000000b",
+        "0000000000000000000000000000000000000000000000000000000000000016"
+      ],
+      "expected_outputs": [
+        "0000000000000000000000000000000000000000000000000000000000000001"
+      ],
+      "commitments": [
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "expected_digest": "31e01875cd32d8ad562dadb16f60f1996d12495863b9a2e4babf58f86d11ffa9",
+      "expected_hidden_party": 1
+    }
+  ]
+}
