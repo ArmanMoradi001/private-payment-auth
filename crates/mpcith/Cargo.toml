@@ -12,4 +12,10 @@ mpc = { path = "../mpc" }
 rand_core = "0.6"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.4"
 rand_chacha = "0.3"
+
+[[bench]]
+name = "mpcith_bench"
+harness = false

@@ -27,6 +27,9 @@ pub struct RepetitionTranscript {
     pub opened_views: Vec<PartyView>,
     /// The hidden party's output shares completing the output sum.
     pub hidden_output_shares: Vec<FieldElement>,
+    /// The hidden party's broadcast mask contributions, which are
+    /// public by construction (they are what every party received).
+    pub hidden_broadcasts: Vec<FieldElement>,
 }
 
 /// Complete deterministic transcript of an MPCitH proof.
@@ -60,6 +63,7 @@ impl MpcithTranscript {
                 ],
                 opened_views: opened.into_iter().map(|ov| ov.view).collect(),
                 hidden_output_shares: repetition.hidden_output_shares.clone(),
+                hidden_broadcasts: repetition.hidden_broadcasts.clone(),
             });
         }
         Self { repetitions }

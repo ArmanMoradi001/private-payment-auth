@@ -12,8 +12,10 @@ members = ["crates/*"]
 ark-ed25519 = "0.4"
 ark-ff = "0.4"
 circuit = { path = "crates/circuit" }
+crypto-core = { path = "crates/crypto-core" }
 criterion = "0.5"
 mpc = { path = "crates/mpc" }
+mpcith = { path = "crates/mpcith" }
 proptest = "1.4"
 rand_core = "0.6"
 rand_chacha = "0.3"

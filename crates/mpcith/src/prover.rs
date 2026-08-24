@@ -52,6 +52,12 @@ pub struct Repetition {
     /// completing the output sum. Cheating here is caught whenever the
     /// corrupted party is not hidden (probability 2/3 per repetition).
     pub hidden_output_shares: Vec<FieldElement>,
+    /// The hidden party's broadcast mask contributions (`d_p`, `e_p`
+    /// per multiplication). These are public in every real execution —
+    /// parties broadcast them to open `d`, `e` — so revealing them for
+    /// the hidden party leaks nothing and lets the verifier reconstruct
+    /// the global masks.
+    pub hidden_broadcasts: Vec<FieldElement>,
 }
 
 /// A complete MPCitH proof: independent repetitions over fresh
@@ -328,6 +334,7 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
             challenge,
             opened_views,
             hidden_output_shares,
+            hidden_broadcasts: parties[hidden].opened_values.clone(),
         })
     }
 

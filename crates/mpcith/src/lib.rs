@@ -30,7 +30,9 @@ pub const VIEW_CONTEXT_DOMAIN: u8 = 0x51;
 
 pub use challenge::{ChallengeSource, DeterministicChallengeSource, RandomChallengeSource};
 pub use commitment::{commit_view, verify_commitment, ViewCommitment};
-pub use encoding::{decode_proof, decode_view, encode_proof, encode_view, ENCODING_VERSION};
+pub use encoding::{
+    decode_proof, decode_view, encode_proof, encode_view, serialize_proof, ENCODING_VERSION,
+};
 pub use error::MpcithError;
 pub use prover::{MpcithProof, MpcithProver, OpenedView, Repetition};
 pub use statement::Statement;

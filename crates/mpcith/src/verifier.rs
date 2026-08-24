@@ -53,8 +53,6 @@ impl NodeVal {
 struct Replay {
     /// Per-node recomputed values.
     values: Vec<NodeVal>,
-    /// The `(d, e)` stream the party broadcast, in order.
-    opened_stream: Vec<FieldElement>,
 }
 
 /// Verifies MPCitH proofs against statements and circuits.
@@ -134,29 +132,56 @@ impl MpcithVerifier {
             }
         }
 
-        // 4. Independent replay of each opened party.
+        // 4. Independent replay of each opened party. First compute
+        // the global broadcast masks: d and e are opened to everyone,
+        // and the hidden party's contributions are part of the proof.
+        let n_broadcasts = repetition.hidden_broadcasts.len();
+        if !n_broadcasts.is_multiple_of(2) {
+            return Err(MpcithError::InvalidOpening);
+        }
+        let mut globals = Vec::with_capacity(n_broadcasts);
+        for k in (0..n_broadcasts).step_by(2) {
+            let mut d = repetition.hidden_broadcasts[k];
+            let mut e = repetition.hidden_broadcasts[k + 1];
+            for opened in &repetition.opened_views {
+                d += *opened
+                    .view
+                    .opened_values
+                    .get(k)
+                    .ok_or(MpcithError::InconsistentView)?;
+                e += *opened
+                    .view
+                    .opened_values
+                    .get(k + 1)
+                    .ok_or(MpcithError::InconsistentView)?;
+            }
+            globals.push(d);
+            globals.push(e);
+        }
+
         let mut replays = Vec::with_capacity(2);
         for opened in &repetition.opened_views {
-            replays.push(self.replay_party(statement, &opened.view, circuit)?);
+            replays.push(self.replay_party(statement, &opened.view, circuit, &globals)?);
         }
 
-        // 5. Both opened parties must have broadcast identical masks.
-        if replays[0].opened_stream != replays[1].opened_stream {
-            return Ok(false);
-        }
-
-        // 6. Output sum over all three parties must match the statement.
+        // 5. Both opened parties' local contributions must have been
+        // consistent with the global masks (checked inside replay);
+        // nothing further to cross-compare here.
         self.check_outputs(statement, repetition, circuit, &replays)
     }
 
     /// Replays one opened party's computation from public data plus its
     /// claimed view, checking every recorded operation in order.
+    ///
+    /// `globals` holds the globally opened `(d, e)` pairs per
+    /// multiplication, reconstructed from all parties' broadcasts.
     #[allow(clippy::too_many_lines)]
     fn replay_party(
         &self,
         statement: &Statement,
         view: &PartyView,
         circuit: &Circuit<FieldElement>,
+        globals: &[FieldElement],
     ) -> Result<Replay, MpcithError> {
         if view.input_shares.len() != circuit.num_secret_inputs() {
             return Err(MpcithError::InconsistentView);
@@ -168,7 +193,6 @@ impl MpcithVerifier {
         let mut next_op = 0usize;
         let mut next_triple = 0usize;
         let mut next_opened = 0usize;
-        let mut opened_stream = Vec::new();
         let p = view.party_id.get() as usize;
 
         macro_rules! take_op {
@@ -271,8 +295,9 @@ impl MpcithVerifier {
                             NodeVal::Shared(expected)
                         }
                         (NodeVal::Shared(_), NodeVal::Shared(_)) => {
-                            // Beaver multiplication: d = x - a,
-                            // e = y - b, z = c + d*b + e*a + d*e.
+                            // Beaver multiplication. Local consistency:
+                            // this party's broadcast contribution must
+                            // equal x_i - a and y_i - b.
                             let triple = view
                                 .triple_shares
                                 .get(next_triple)
@@ -294,9 +319,20 @@ impl MpcithVerifier {
                             {
                                 return Err(MpcithError::InvalidOpening);
                             }
-                            let mut z_expected = triple.c + d_claim * triple.b + e_claim * triple.a;
+
+                            // Global consistency: the operation must use
+                            // the globally opened masks at this position.
+                            let d_global = *globals
+                                .get(next_opened - 2)
+                                .ok_or(MpcithError::InvalidOpening)?;
+                            let e_global = *globals
+                                .get(next_opened - 1)
+                                .ok_or(MpcithError::InvalidOpening)?;
+
+                            let mut z_expected =
+                                triple.c + d_global * triple.b + e_global * triple.a;
                             if p == 0 {
-                                z_expected += d_claim * e_claim;
+                                z_expected += d_global * e_global;
                             }
 
                             expect_op!(
@@ -309,15 +345,13 @@ impl MpcithVerifier {
                                 },
                                 if *output != out
                                     || *ti != next_triple - 1
-                                    || *d != d_claim
-                                    || *e != e_claim
+                                    || *d != d_global
+                                    || *e != e_global
                                     || *share != z_expected
                                 {
                                     return Err(MpcithError::InconsistentView);
                                 }
                             );
-                            opened_stream.push(d_claim);
-                            opened_stream.push(e_claim);
                             NodeVal::Shared(z_expected)
                         }
                     }
@@ -335,10 +369,7 @@ impl MpcithVerifier {
             return Err(MpcithError::InconsistentView);
         }
 
-        Ok(Replay {
-            values,
-            opened_stream,
-        })
+        Ok(Replay { values })
     }
 
     /// Checks that the combined output shares equal the statement's

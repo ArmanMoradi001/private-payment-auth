@@ -257,6 +257,11 @@ pub fn encode_repetition(repetition: &crate::prover::Repetition, out: &mut Vec<u
         put_element(out, share);
     }
 
+    out.extend_from_slice(&(repetition.hidden_broadcasts.len() as u32).to_be_bytes());
+    for value in &repetition.hidden_broadcasts {
+        put_element(out, value);
+    }
+
     for opened in &repetition.opened_views {
         let mut view_bytes = Vec::new();
         encode_view(&opened.view, &mut view_bytes);
@@ -288,6 +293,9 @@ pub fn decode_repetition(bytes: &[u8]) -> Result<(crate::prover::Repetition, usi
     let n_hidden_out = c.read_u32()? as usize;
     let hidden_output_shares = read_elements(&mut c, n_hidden_out)?;
 
+    let n_broadcasts = c.read_u32()? as usize;
+    let hidden_broadcasts = read_elements(&mut c, n_broadcasts)?;
+
     let mut opened_views = Vec::with_capacity(2);
     for _ in 0..2 {
         let len = c.read_u32()? as usize;
@@ -305,6 +313,7 @@ pub fn decode_repetition(bytes: &[u8]) -> Result<(crate::prover::Repetition, usi
             challenge,
             opened_views,
             hidden_output_shares,
+            hidden_broadcasts,
         },
         c.pos,
     ))
@@ -317,6 +326,13 @@ pub fn encode_proof(proof: &crate::prover::MpcithProof, out: &mut Vec<u8>) {
     for repetition in &proof.repetitions {
         encode_repetition(repetition, out);
     }
+}
+
+/// Convenience wrapper: serializes a proof into a fresh byte vector.
+pub fn serialize_proof(proof: &crate::prover::MpcithProof) -> Vec<u8> {
+    let mut out = Vec::new();
+    encode_proof(proof, &mut out);
+    out
 }
 
 /// Decodes a full proof, rejecting version mismatches and trailing
