@@ -20,6 +20,9 @@ pub enum CircuitError {
     /// A node is malformed (bad tag, bad operand shape, non-canonical
     /// constant, or otherwise violates the circuit invariants).
     MalformedNode,
+    /// An MPC protocol operation failed during evaluation (sharing,
+    /// arithmetic, or triple supply).
+    MpcFault,
     /// Encoded bytes use an unsupported serialization version.
     UnsupportedVersion,
     /// Encoded bytes end with unparsed trailing data.
@@ -36,6 +39,7 @@ impl fmt::Display for CircuitError {
             Self::MissingOutput => "circuit declares no outputs",
             Self::InvalidInputCount => "input count mismatch",
             Self::MalformedNode => "malformed node",
+            Self::MpcFault => "mpc protocol fault during evaluation",
             Self::UnsupportedVersion => "unsupported encoding version",
             Self::TrailingBytes => "trailing bytes after circuit",
             Self::UnexpectedEnd => "unexpected end of encoding",
