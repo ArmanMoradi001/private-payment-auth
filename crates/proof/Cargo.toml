@@ -7,5 +7,6 @@ edition = "2021"
 ark-ff = "0.4"
 circuit = { path = "../circuit" }
 mpc = { path = "../mpc" }
+rand_core = "0.6"
 crypto-core = { path = "../crypto-core" }
 mpcith = { path = "../mpcith" }

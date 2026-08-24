@@ -37,6 +37,9 @@ pub use error::MpcithError;
 pub use prover::{MpcithProof, MpcithProver, OpenedView, Repetition};
 pub use statement::Statement;
 pub use transcript::{MpcithTranscript, RepetitionTranscript};
-pub use types::{Challenge, FieldElement, PartyId, RepetitionId, PARTY_COUNT};
+pub use types::{
+    Challenge, FieldElement, PartyId, RepetitionId, DIGEST_LEN_MPCITH, PARTY_COUNT,
+    RANDOMNESS_LEN_MPCITH,
+};
 pub use verifier::{MpcithVerifier, VerificationResult};
 pub use view::{LocalOperation, PartyView, TripleShare};
