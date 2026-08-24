@@ -1,9 +1,10 @@
 # Architecture Overview
 
-> **Status: Phase 4 — `circuit` layer added.** The primitives,
-> additive-MPC, and arithmetic-circuit layers are implemented; the
-> proof stack (`mpcith`, `proof`, `policy`, `verifier`, `payment`,
-> `sdk`) remains *intended* architecture only.
+> **Status: Phase 5 — MPCitH layer added.** The primitives, additive
+> MPC, arithmetic-circuit, and MPC-in-the-Head layers are implemented;
+> the Fiat–Shamir/proof abstraction and the application stack
+> (`proof`, `policy`, `verifier`, `payment`, `sdk`) remain *intended*
+> architecture only.
 
 ## Purpose
 
@@ -152,6 +153,41 @@ Implemented in the new `circuit` crate on top of `crypto-core` and
 See ADR [0005](../decisions/0005-arithmetic-circuit-layer.md) for the
 design rationale.
 
+## `mpcith` (Phase 5)
+
+Implemented in the new `mpcith` crate over `circuit`, `mpc`, and
+`crypto-core`:
+
+- **Fixed 3-party model** — every repetition simulates exactly three
+  virtual parties (`PartyId` ∈ {0,1,2}); this is deliberately *not*
+  the n-party model of the `mpc` simulator.
+- **Views** — a `PartyView` records one party's full execution:
+  input shares, per-gate local operations (`Add`, `MulPublic`,
+  `BeaverMul` with the global masks and its result share), Beaver
+  triple shares, and broadcast mask contributions. `Debug` output is
+  redacted for all share-bearing fields.
+- **Commit-then-open** — all three views are committed (SHA-256 via
+  `crypto_core::commit`, fresh 32-byte randomness, domain
+  `private-payment-auth/mpcith/view/v1`) *before* the challenge
+  arrives from an injectable `ChallengeSource`; the two non-hidden
+  views are then opened. Soundness error per repetition: 1/3.
+- **Independent verifier** — replays each opened view from public
+  data only, checking commitments in constant time, per-party algebra
+  (`d = x − a`, `e = y − b`, `z = c + d·b + e·a + d·e`), global mask
+  reconstruction from all parties' broadcasts, and the final output
+  sum against the statement. The hidden party's broadcast
+  contributions and output share are included in the response — both
+  are public by construction.
+- **Canonical encoding** — hand-rolled injective serialization for
+  views, challenges, repetitions, and whole proofs; version byte,
+  strict lengths, trailing-byte rejection.
+- **Transcripts** — `MpcithTranscript` records commitments,
+  challenges, and opened views per repetition in deterministic order;
+  no commitment randomness and no hidden-party state.
+
+Fiat–Shamir is intentionally deferred; see ADR
+[0006](../decisions/0006-mpcith.md).
+
 ## Key Invariants
 
 1. Only `crypto-core` may contain raw cryptographic primitives.
@@ -163,3 +199,7 @@ design rationale.
    reference strictly earlier nodes.
 6. The reference evaluator never calls MPC functions; equivalence
    between the two evaluators is property-tested, not assumed.
+7. The MPCitH verifier never calls prover code; it re-implements
+   circuit semantics from scratch.
+8. MPCitH repetitions share nothing: fresh input sharings, triples,
+   and commitment randomness per repetition.

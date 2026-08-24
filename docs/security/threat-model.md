@@ -190,3 +190,44 @@ security-relevant properties:
   policy layers.
 - **Constant-time concerns do not apply** to circuit structure (it is
   public), but the MPC layer's constant-time posture is unchanged.
+
+## MPC-in-the-Head: Assumptions and Limitations (Phase 5)
+
+The `mpcith` crate turns circuit executions into transferable
+evidence. Security-relevant properties:
+
+### What is provided
+
+- **Commit-before-challenge**: all three party views are committed
+  with fresh randomness before the challenge exists, so the challenge
+  decides which corruption (if any) is exposed.
+- **2/3 per-repetition detection**: any cheating view is opened unless
+  it belongs to the challenged-hidden party; R independent repetitions
+  give forgery probability (1/3)^R under random challenges.
+- **No secret leakage from proofs or transcripts**: opened views
+  contain only shares of secrets and public broadcast masks; the
+  hidden party appears solely through commitments, its broadcast
+  contributions (public in any real execution), and its output share.
+  `Debug` output of share-bearing types is redacted.
+- **Independent verification**: the verifier re-implements semantics;
+  prover bugs cannot masquerade as verifier behavior.
+
+### Limitations — explicitly NOT provided
+
+- **Fiat–Shamir deferred**: challenges come from an injectable source.
+  Until FS lands, the proof is an *interactive* argument; a malicious
+  prover who can see/choose challenges adaptively could always name
+  its corrupted party as hidden. This is the single most important
+  open gap (ADR 0006).
+- **Soundness is probabilistic**: a 1-repetition proof accepts a
+  cheated execution with probability 1/3 by design; security
+  amplification requires many repetitions (and then FS).
+- **Hash-based commitments are not hiding against quantum adversaries**
+  and rely on SHA-256 collision resistance in the standard model;
+  formal assumptions remain an open ADR item.
+- **Triple generation is trusted-local**: `LocalTrustedTripleProvider`-
+  style randomness inside the prover simulates an honest dealer;
+  distributed triple generation is future work.
+- **No replay protection across statements**: the same proof verifies
+  forever against the same statement; freshness binding belongs to the
+  future policy/verifier layers.
