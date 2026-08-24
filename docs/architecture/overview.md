@@ -1,8 +1,9 @@
 # Architecture Overview
 
-> **Status: Phase 2 — Repository Foundation and `crypto-core` /
-> `secret-sharing`.** The primitives layer is implemented; higher layers
-> remain *intended* architecture only.
+> **Status: Phase 4 — `circuit` layer added.** The primitives,
+> additive-MPC, and arithmetic-circuit layers are implemented; the
+> proof stack (`mpcith`, `proof`, `policy`, `verifier`, `payment`,
+> `sdk`) remains *intended* architecture only.
 
 ## Purpose
 
@@ -114,6 +115,43 @@ Testing: unit tests, Python-generated cross-implementation vectors
 Criterion benchmarks. See ADR [0003](../decisions/0003-secret-sharing.md)
 for design rationale.
 
+## `circuit` (Phase 4)
+
+Implemented in the new `circuit` crate on top of `crypto-core` and
+`mpc`:
+
+- **Arithmetic DAG** — a `Circuit<F>` is an ordered vector of
+  [`Node`]s (`SecretInput`, `PublicInput`, `Constant`, `Add`, `Mul`);
+  binary gates reference operands directly by `NodeId`. Ids are
+  assigned in construction order and must reference strictly earlier
+  nodes, so the node vector *is* a deterministic topological order —
+  no separate wire/edge list.
+- **Validation** — `Circuit::validate` rejects invalid references,
+  forward/self references, input-count mismatches, and empty or
+  dangling output declarations.
+- **Builder** — `CircuitBuilder` assigns ids deterministically
+  (`0, 1, 2, ...`) and returns validated circuits from `build()`.
+- **Canonical encoding** — hand-rolled injective serialization:
+  `version(u8) || num_nodes(u32) || [tagged node encodings] ||
+  num_outputs(u32) || [output ids]`. Constants are full-width
+  big-endian field elements; trailing bytes, truncation, unknown
+  versions/tags, and invalid structures are rejected.
+- **Identity** — `CircuitId = SHA-256("private-payment-auth/circuit/v1"
+  || canonical_encoding)` via the domain-separated `Sha256Hash`; any
+  change to constants, operations, ordering, inputs, or outputs
+  changes the id (mutation-tested).
+- **Transcript seam** — `TranscriptHook` records structural events
+  (`Input` / `Operation` / `Open` / `Output`) carrying only node ids,
+  never values; hooks are optional (`None` costs nothing).
+- **Dual evaluators** — `eval_reference` computes ground truth over
+  raw field elements with zero dependency on protocol logic;
+  `eval_mpc` mirrors every gate onto the additive-sharing MPC layer.
+  Property tests enforce `reference_eval == reveal(mpc_eval)` over
+  randomized circuits.
+
+See ADR [0005](../decisions/0005-arithmetic-circuit-layer.md) for the
+design rationale.
+
 ## Key Invariants
 
 1. Only `crypto-core` may contain raw cryptographic primitives.
@@ -121,3 +159,7 @@ for design rationale.
    never on `mpc` or `mpcith` directly.
 3. All code is `#![forbid(unsafe_code)]`.
 4. Every crate documents its future responsibility via crate-level docs.
+5. Circuit node ids are positional and topological; operands must
+   reference strictly earlier nodes.
+6. The reference evaluator never calls MPC functions; equivalence
+   between the two evaluators is property-tested, not assumed.

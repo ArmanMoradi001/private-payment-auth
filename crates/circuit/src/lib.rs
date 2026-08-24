@@ -20,6 +20,7 @@ pub mod types;
 
 pub use builder::CircuitBuilder;
 pub use circuit::Circuit;
+pub use encoding::{deserialize, serialize};
 pub use error::CircuitError;
 pub use eval_mpc::{evaluate_mpc, reveal_output};
 pub use eval_reference::evaluate_reference;

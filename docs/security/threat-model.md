@@ -149,3 +149,44 @@ limits:
 Consequence for upper layers: until VSS or MPC-based verification is
 added, `split`/`reconstruct` may only be deployed where the dealer and
 at least `t` shareholders are trusted to be honest.
+
+## Arithmetic Circuits: Assumptions and Limitations (Phase 4)
+
+The `circuit` crate defines the *statement* to be authorized. Its
+security-relevant properties:
+
+### What is provided
+
+- **Deterministic semantics**: node ids are positional and
+  topological; evaluation is a single forward pass, so identical call
+  sequences always produce byte-identical circuits and identical
+  circuit ids.
+- **Hash-bound identity**: `CircuitId` is a domain-separated SHA-256
+  over the canonical encoding. Substituting a different policy circuit
+  (changed constant, gate, ordering, inputs, or outputs) is detected
+  by id mismatch — this is what future policy-integrity checks will
+  bind to.
+- **No secrets in structure or transcripts**: circuits contain only
+  public structure; transcript events carry node ids only, never
+  field values. Secret values live solely in MPC shares until an
+  explicit caller-initiated reveal.
+- **Dual-evaluator equivalence**: randomized property tests enforce
+  that the MPC evaluation of a circuit matches its plaintext reference
+  evaluation, guarding against protocol bugs that would silently
+  authorize wrong policies.
+
+### Limitations — explicitly NOT provided
+
+- **Circuit identity is not yet authenticated**: nothing prevents an
+  attacker from substituting both a circuit and artifacts computed
+  under it; binding ids into signed/committed policy commitments is
+  future work (`policy` layer).
+- **No overflow/range constraints beyond the field**: arithmetic wraps
+  in the prime field; amount-limit policies must account for modular
+  semantics.
+- **Reveal policy is caller-controlled**: `reveal_output` exists so
+  reveals are transcript-visible, but nothing yet *enforces* which
+  outputs may be opened; enforcement belongs to the future verifier /
+  policy layers.
+- **Constant-time concerns do not apply** to circuit structure (it is
+  public), but the MPC layer's constant-time posture is unchanged.

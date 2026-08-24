@@ -9,7 +9,14 @@ resolver = "2"
 members = ["crates/*"]
 
 [dev-dependencies]
+ark-ed25519 = "0.4"
+ark-ff = "0.4"
+circuit = { path = "crates/circuit" }
 criterion = "0.5"
+mpc = { path = "crates/mpc" }
+proptest = "1.4"
+rand_core = "0.6"
+rand_chacha = "0.3"
 
 [[test]]
 name = "smoke"
