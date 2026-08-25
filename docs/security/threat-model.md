@@ -75,6 +75,50 @@ Informal for now; formal definitions to follow after primitive selection:
 - Replay protection and artifact freshness: mechanism and scope?
 - Audit and formal verification strategy for `crypto-core` and `proof`?
 
+## Policy and Payment Layers: Assumptions and Limitations (Phase 7)
+
+The `policy`/`payment` stack (see ADR
+[0008](../decisions/0008-private-authorization.md)) introduces the
+first end-to-end authorization artifacts. Their current security
+envelope:
+
+### What is provided
+
+- **Transcript binding**: every proof embeds the full public input
+  vector — including the payment amount, recipient commitment, and
+  payment id as circuit inputs — in the Fiat–Shamir derivation. Any
+  modification of a statement's public field after generation breaks
+  verification (`StatementMismatch`), tested adversarially.
+- **Relation-checked proving**: `authorize` refuses to prove before
+  the plaintext relation passes, so artifacts always correspond to a
+  policy-satisfying witness under the reference semantics.
+- **Policy identity**: statements carry the domain-separated
+  `PolicyId`; verifier-side mismatches are rejected before any proof
+  work.
+- **Determinism**: identical policies compile to identical circuits
+  and ids, so verifiers cannot be tricked into checking against a
+  different circuit than provers used.
+
+### Explicit limitations (not production-safe yet)
+
+1. **Amount comparison uses raw field arithmetic.** The compiled
+   `AmountAtMost` constraint excludes only the window
+   `(limit, AMOUNT_BOUND]`. Amounts above the bound — or wrapped field
+   values outside it — satisfy the constraint. This is *unsound for
+   final financial amounts*; a later phase must introduce a range-
+   checked fixed-width representation (e.g., bit decomposition).
+2. **Credential binding is a placeholder.** In-circuit credential
+   checks compare commitment digests by field equality; the real hash
+   runs outside the circuit. A malicious prover with custom tooling
+   could prove satisfiability without knowing the preimages.
+   Production requires an arithmetizable hash (e.g., Poseidon/
+   Rescue-style permutation) inside the circuit.
+3. **Parameterization is provisional.** `AUTHORIZATION_REPETITIONS =
+   12` gives per-artifact forgery probability ≈ (1/3)¹² ≈ 1.9·10⁻⁶;
+   production parameters await the cost study phase.
+4. **No replay protection / freshness** at the artifact level yet;
+   `payment_id` uniqueness is an application-layer concern.
+
 ## Secret Handling Notes (Phase 1)
 
 Current mitigations in `crypto-core`:

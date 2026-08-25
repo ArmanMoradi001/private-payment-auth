@@ -16,4 +16,9 @@ proof = { path = "../proof", version = "0.1.0" }
 rand_core = "0.6"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 rand_chacha = "0.3"
+
+[[bench]]
+name = "authorization_bench"
+harness = false

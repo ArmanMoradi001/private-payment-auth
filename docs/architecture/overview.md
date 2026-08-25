@@ -1,10 +1,10 @@
 # Architecture Overview
 
-> **Status: Phase 5 — MPCitH layer added.** The primitives, additive
-> MPC, arithmetic-circuit, and MPC-in-the-Head layers are implemented;
-> the Fiat–Shamir/proof abstraction and the application stack
-> (`proof`, `policy`, `verifier`, `payment`, `sdk`) remain *intended*
-> architecture only.
+> **Status: Phase 7 — policy and payment layers added.** The
+> primitives, additive MPC, arithmetic-circuit, MPC-in-the-Head,
+> Fiat–Shamir/proof layers are implemented; Phase 7 adds the
+> `policy` compiler and the `payment` authorization stack. The
+> `verifier` and `sdk` crates remain *intended* architecture only.
 
 ## Purpose
 
@@ -187,6 +187,68 @@ Implemented in the new `mpcith` crate over `circuit`, `mpc`, and
 
 Fiat–Shamir is intentionally deferred; see ADR
 [0006](../decisions/0006-mpcith.md).
+
+## `policy` (Phase 7)
+
+Implemented in the `policy` crate over `crypto-core`, `circuit`, and
+`ark-ff`:
+
+- **Policy model** — a recursive [`Policy`] tree: `Threshold {k,
+  credentials}` over SHA-256-committed credentials, `AmountAtMost`,
+  and `And`/`Or` combinators. Structural validation rejects zero
+  thresholds, empty credential lists, `k > n`, and empty combinators.
+- **Canonical encoding + identity** — injective tag-prefixed encoding;
+  `PolicyId = SHA-256("private-payment-auth/policy/v1" ‖ encoding)`.
+  Equal ids imply equal policies.
+- **Deterministic compiler** — `compile(&Policy)` maps the tree onto a
+  plain `{+, ×}` circuit with fixed traversal/gate order, so equal
+  policies yield identical `CircuitId`s. Because there are no
+  comparison or hash gates (and the MPC layers can evaluate only
+  `Add`/`Mul` on shares), constraints use two arithmetic gadgets:
+  - *Fermat zero-indicator*: `x^(p−1) ∈ {0,1}` exactly, giving exact
+    credential-match booleans with no prover freedom.
+  - *Inverted exclusion product*: each leaf emits `w = X·aux` where
+    `X` vanishes exactly on the violating set; `w ≡ 0` when violated,
+    and `w = 1` is reachable via `aux = X⁻¹` exactly when satisfied.
+    Combinators compose these soundly (`a·b`, `a + b − a·b`).
+- **Input layouts** — `compile_with_layout` additionally returns
+  secret/public slot lists so consumers can assemble witness and
+  statement vectors positionally, plus per-auxiliary discriminant
+  wires for inversion.
+
+See ADR [0008](../decisions/0008-private-authorization.md) for the
+authorization-relation design and its documented limits.
+
+## `payment` (Phase 7)
+
+Implemented in the `payment` crate over `policy`, `proof`,
+`crypto-core`, `mpc`, and `circuit`:
+
+- **`PaymentStatement`** — public payment data (`payment_id[32]`,
+  `amount: u64`, `recipient_commitment`, `policy_id`) with a fixed-
+  width injective canonical encoding.
+- **`PrivateWitness`** — zeroizing credential secrets validated against
+  the policy's declared count and size limits.
+- **`AuthorizationRelation`** — the plaintext reference semantics:
+  policy-id binding, witness shape, per-credential hash checks,
+  threshold counting, amount caps, combined through the policy tree;
+  cross-checked against the compiled circuit's reference evaluation.
+- **Statement binding** — the compiled circuit is extended with three
+  public leaves (`amount`, recipient commitment, payment id)
+  multiplied into the root wire. The bound root evaluates to
+  `b₁b₂b₃` for honest runs — fully verifier-recomputable — and puts
+  the payment data inside the Fiat–Shamir transcript, so any tampered
+  statement field invalidates existing proofs.
+- **`authorize` / `verify_authorization`** — end-to-end proving and
+  verification delegating to the abstract `proof` interface only.
+  Verifiers rebuild circuit, public inputs, and expected outputs from
+  public data alone; no witness material exists on that side.
+
+Known limitations of this phase (deliberate, documented): raw-field
+amount comparison is not production-safe, and credential binding
+inside circuits uses commitment-digest equality as a placeholder for
+in-circuit hashing. See ADR [0008](../decisions/0008-private-authorization.md)
+and the threat model.
 
 ## Key Invariants
 
