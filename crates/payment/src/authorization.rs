@@ -18,8 +18,8 @@ use rand_core::CryptoRngCore;
 use crate::error::PaymentError;
 use crate::relation::AuthorizationRelation;
 use crate::statement::PaymentStatement;
-use crate::witness::PrivateWitness;
 use crate::wiring;
+use crate::witness::PrivateWitness;
 
 /// MPCitH repetitions used for payment authorizations in this phase.
 ///
@@ -51,8 +51,7 @@ pub fn authorize(
     // 2. Compile and bind the statement into the transcript.
     let compiled = wiring::compile(policy)?;
     let bound_circuit = wiring::bind_statement(&compiled, statement)?;
-    let (secrets, publics) =
-        wiring::build_inputs(&compiled, policy, statement, witness)?;
+    let (secrets, publics) = wiring::build_inputs(&compiled, policy, statement, witness)?;
     let mut publics = publics;
     publics.extend(wiring::binding_values(statement));
 
@@ -65,13 +64,8 @@ pub fn authorize(
     };
 
     // 4. Prove.
-    let mut prover = proof::Prover::new(
-        &bound_circuit,
-        &fs_statement,
-        secrets,
-        rng,
-    )
-    .map_err(|_| PaymentError::ProofGenerationFailed)?;
+    let mut prover = proof::Prover::new(&bound_circuit, &fs_statement, secrets, rng)
+        .map_err(|_| PaymentError::ProofGenerationFailed)?;
     prover
         .prove(AUTHORIZATION_REPETITIONS)
         .map_err(|_| PaymentError::ProofGenerationFailed)
@@ -154,10 +148,16 @@ mod tests {
 
     fn sample_statement(policy_id: policy::PolicyId, amount: u64) -> PaymentStatement {
         PaymentStatement {
-            payment_id: [5u8; crate::PAYMENT_ID_LEN],
-            amount,
+            payment_id: Digest::new([5u8; 32]),
+            amount: crate::amount::Amount {
+                value: amount,
+                unit: crate::amount::AmountUnit::Cents,
+            },
             recipient_commitment: Digest::new([0xcd; 32]),
             policy_id,
+            circuit_id: circuit::CircuitId::from_digest(Digest::new([0; 32])),
+            protocol_version: proof::PROTOCOL_VERSION,
+            nonce: [0u8; crate::payment::NONCE_LEN],
         }
     }
 
@@ -171,14 +171,13 @@ mod tests {
             ],
         };
         let statement = sample_statement(policy.policy_id(), 42);
-        let witness = PrivateWitness { credential_secrets: secrets };
+        let witness = PrivateWitness {
+            credential_secrets: secrets,
+        };
         let mut rng = ChaCha20Rng::seed_from_u64(7);
 
-        let proof = authorize(&statement, &witness, &policy, &mut rng)
-            .expect("authorization proves");
-        assert_eq!(
-            verify_authorization(&statement, &proof, &policy),
-            Ok(true)
-        );
+        let proof =
+            authorize(&statement, &witness, &policy, &mut rng).expect("authorization proves");
+        assert_eq!(verify_authorization(&statement, &proof, &policy), Ok(true));
     }
 }

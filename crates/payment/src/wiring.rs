@@ -8,9 +8,7 @@
 use ark_ed25519::Fr;
 use ark_ff::{Field, One, PrimeField, Zero};
 use circuit::{evaluate_reference, Circuit, NodeId};
-use policy::{
-    compile_with_layout, credential_commitment, CompiledPolicy, PublicSlot, SecretSlot,
-};
+use policy::{compile_with_layout, credential_commitment, CompiledPolicy, PublicSlot, SecretSlot};
 
 use crate::error::PaymentError;
 use crate::statement::PaymentStatement;
@@ -36,9 +34,9 @@ pub(crate) fn digest_to_field(digest: &crypto_core::Digest) -> Fr {
 /// input vector) commits to the exact payment being authorized.
 pub(crate) fn binding_values(statement: &PaymentStatement) -> [Fr; 3] {
     [
-        Fr::from(statement.amount),
+        Fr::from(statement.amount.value),
         digest_to_field(&statement.recipient_commitment),
-        digest_to_field(&crypto_core::Digest::new(statement.payment_id)),
+        digest_to_field(&statement.payment_id),
     ]
 }
 
@@ -85,12 +83,7 @@ pub(crate) fn bind_statement(
     let final_node = NodeId::new(nodes.len() as u32);
     nodes.push(Node::Mul(old_root, binding_product));
 
-    let bound = circuit::Circuit::new(
-        nodes,
-        num_secret,
-        num_public + 3,
-        vec![final_node],
-    );
+    let bound = circuit::Circuit::new(nodes, num_secret, num_public + 3, vec![final_node]);
     bound.validate().map_err(|_| PaymentError::InvalidPolicy)?;
     Ok(bound)
 }
@@ -121,13 +114,17 @@ pub(crate) fn policy_public_inputs(
     for slot in &compiled.public_slots {
         match slot {
             PublicSlot::CredentialCommitment(i) => {
-                let digest =
-                    commitments.get(*i).copied().ok_or(PaymentError::InvalidPolicy)?;
+                let digest = commitments
+                    .get(*i)
+                    .copied()
+                    .ok_or(PaymentError::InvalidPolicy)?;
                 publics.push(digest_to_field(&digest));
             }
             PublicSlot::AmountLimit => {
-                let limit =
-                    limits.get(next_limit).copied().ok_or(PaymentError::InvalidPolicy)?;
+                let limit = limits
+                    .get(next_limit)
+                    .copied()
+                    .ok_or(PaymentError::InvalidPolicy)?;
                 next_limit += 1;
                 publics.push(Fr::from(limit));
             }
@@ -169,7 +166,7 @@ pub(crate) fn build_inputs(
                 // always matches its expected commitment.
                 secrets.push(digest_to_field(&credential_commitment(secret)));
             }
-            SecretSlot::Amount => secrets.push(Fr::from(statement.amount)),
+            SecretSlot::Amount => secrets.push(Fr::from(statement.amount.value)),
             SecretSlot::Auxiliary => {
                 aux_positions.push(index);
                 secrets.push(Fr::zero());
@@ -267,8 +264,7 @@ pub(crate) fn reference_outputs(
     secrets: &[Fr],
     publics: &[Fr],
 ) -> Result<Vec<Fr>, PaymentError> {
-    evaluate_reference(circuit, secrets, publics)
-        .map_err(|_| PaymentError::InvalidPolicy)
+    evaluate_reference(circuit, secrets, publics).map_err(|_| PaymentError::InvalidPolicy)
 }
 
 /// The field element representing “constraint satisfied”.

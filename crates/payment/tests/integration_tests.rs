@@ -5,10 +5,7 @@
 //! and tamper detection after proof generation.
 
 use crypto_core::{Digest, SecretBytes};
-use payment::{
-    authorize, verify_authorization, PaymentError, PaymentStatement, PrivateWitness,
-    PAYMENT_ID_LEN,
-};
+use payment::{authorize, verify_authorization, PaymentError, PaymentStatement, PrivateWitness};
 use policy::{credential_commitment, CredentialPolicy, Policy};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
@@ -20,22 +17,32 @@ fn fixture(n: usize) -> (Vec<SecretBytes>, Vec<CredentialPolicy>) {
             let secret = SecretBytes::new(vec![i as u8 + 1, 0xbe, 0xef]);
             (
                 secret.clone(),
-                CredentialPolicy { expected_commitment: credential_commitment(&secret) },
+                CredentialPolicy {
+                    expected_commitment: credential_commitment(&secret),
+                },
             )
         })
         .unzip()
 }
 
 fn witness(secrets: &[SecretBytes]) -> PrivateWitness {
-    PrivateWitness { credential_secrets: secrets.to_vec() }
+    PrivateWitness {
+        credential_secrets: secrets.to_vec(),
+    }
 }
 
 fn statement(policy: &Policy, amount: u64) -> PaymentStatement {
     PaymentStatement {
-        payment_id: [11u8; PAYMENT_ID_LEN],
-        amount,
+        payment_id: Digest::new([11; 32]),
+        amount: payment::Amount {
+            value: amount,
+            unit: payment::AmountUnit::Cents,
+        },
         recipient_commitment: Digest::new([0x77; 32]),
         policy_id: policy.policy_id(),
+        circuit_id: circuit::CircuitId::from_digest(Digest::new([0; 32])),
+        protocol_version: payment::PROTOCOL_VERSION,
+        nonce: [0u8; 32],
     }
 }
 
@@ -56,8 +63,7 @@ fn test_a_two_of_three_with_amount_under_limit_verifies() {
     let statement = statement(&policy, 50);
 
     let mut rng = ChaCha20Rng::seed_from_u64(0xA);
-    let proof =
-        authorize(&statement, &witness(&secrets), &policy, &mut rng).expect("proves");
+    let proof = authorize(&statement, &witness(&secrets), &policy, &mut rng).expect("proves");
     assert_eq!(verify_authorization(&statement, &proof, &policy), Ok(true));
 }
 
@@ -113,13 +119,17 @@ fn test_e_tampered_public_field_breaks_verification() {
     let statement = statement(&policy, 42);
 
     let mut rng = ChaCha20Rng::seed_from_u64(0xE);
-    let proof =
-        authorize(&statement, &witness(&secrets), &policy, &mut rng).expect("proves");
+    let proof = authorize(&statement, &witness(&secrets), &policy, &mut rng).expect("proves");
 
     // Tamper with the public amount after proof generation.
-    let tampered_amount = PaymentStatement { amount: 43, ..statement.clone() };
-    let verdict =
-        verify_authorization(&tampered_amount, &proof, &policy);
+    let tampered_amount = PaymentStatement {
+        amount: payment::Amount {
+            value: 43,
+            unit: payment::AmountUnit::Cents,
+        },
+        ..statement
+    };
+    let verdict = verify_authorization(&tampered_amount, &proof, &policy);
     assert_ne!(verdict, Ok(true), "amount tampering must be detected");
     assert_eq!(
         verdict,
@@ -130,7 +140,7 @@ fn test_e_tampered_public_field_breaks_verification() {
     // Tamper with the recipient binding as well.
     let tampered_recipient = PaymentStatement {
         recipient_commitment: Digest::new([0x99; 32]),
-        ..statement.clone()
+        ..statement
     };
     assert_eq!(
         verify_authorization(&tampered_recipient, &proof, &policy),

@@ -5,9 +5,7 @@
 use ark_ed25519::Fr;
 use criterion::{criterion_group, criterion_main, Criterion};
 use crypto_core::SecretBytes;
-use payment::{
-    authorize, verify_authorization, PaymentStatement, PrivateWitness, PAYMENT_ID_LEN,
-};
+use payment::{authorize, verify_authorization, PaymentStatement, PrivateWitness};
 use policy::{compile, credential_commitment, CredentialPolicy, Policy};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
@@ -18,7 +16,9 @@ fn policy_2_of_3() -> (Policy, Vec<SecretBytes>) {
         .map(|_| {
             let secret = SecretBytes::new(vec![secrets.len() as u8 + 1, 0xbe, 0xef]);
             secrets.push(secret.clone());
-            CredentialPolicy { expected_commitment: credential_commitment(&secret) }
+            CredentialPolicy {
+                expected_commitment: credential_commitment(&secret),
+            }
         })
         .collect();
     let policy = Policy::And {
@@ -32,10 +32,16 @@ fn policy_2_of_3() -> (Policy, Vec<SecretBytes>) {
 
 fn statement(policy_id: policy::PolicyId) -> PaymentStatement {
     PaymentStatement {
-        payment_id: [9u8; PAYMENT_ID_LEN],
-        amount: 42,
+        payment_id: crypto_core::Digest::new([9; 32]),
+        amount: payment::Amount {
+            value: 42,
+            unit: payment::AmountUnit::Cents,
+        },
         recipient_commitment: crypto_core::Digest::new([0xab; 32]),
         policy_id,
+        circuit_id: circuit::CircuitId::from_digest(crypto_core::Digest::new([0; 32])),
+        protocol_version: payment::PROTOCOL_VERSION,
+        nonce: [0u8; 32],
     }
 }
 
@@ -49,7 +55,9 @@ fn bench_compile(c: &mut Criterion) {
 fn bench_prove(c: &mut Criterion) {
     let (policy, secrets) = policy_2_of_3();
     let stmt = statement(policy.policy_id());
-    let witness = PrivateWitness { credential_secrets: secrets };
+    let witness = PrivateWitness {
+        credential_secrets: secrets,
+    };
 
     c.bench_function("authorization/prove_2of3_reps12", |b| {
         b.iter(|| {
@@ -67,19 +75,15 @@ fn bench_prove(c: &mut Criterion) {
 fn bench_verify(c: &mut Criterion) {
     let (policy, secrets) = policy_2_of_3();
     let stmt = statement(policy.policy_id());
-    let witness = PrivateWitness { credential_secrets: secrets };
-    let proof = authorize(
-        &stmt,
-        &witness,
-        &policy,
-        &mut ChaCha20Rng::seed_from_u64(2),
-    )
-    .expect("proves");
+    let witness = PrivateWitness {
+        credential_secrets: secrets,
+    };
+    let proof =
+        authorize(&stmt, &witness, &policy, &mut ChaCha20Rng::seed_from_u64(2)).expect("proves");
 
     c.bench_function("authorization/verify_2of3_reps12", |b| {
         b.iter(|| {
-            verify_authorization(std::hint::black_box(&stmt), &proof, &policy)
-                .expect("verifies")
+            verify_authorization(std::hint::black_box(&stmt), &proof, &policy).expect("verifies")
         })
     });
 }

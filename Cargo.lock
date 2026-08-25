@@ -664,6 +664,7 @@ dependencies = [
  "ark-ed25519",
  "ark-ff",
  "circuit",
+ "criterion",
  "crypto-core",
  "mpc",
  "policy",

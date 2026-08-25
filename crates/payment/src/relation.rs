@@ -12,8 +12,8 @@ use policy::{credential_commitment, Policy};
 
 use crate::error::PaymentError;
 use crate::statement::PaymentStatement;
-use crate::witness::PrivateWitness;
 use crate::wiring;
+use crate::witness::PrivateWitness;
 
 /// Reference implementation of the authorization relation.
 pub struct AuthorizationRelation;
@@ -58,8 +58,7 @@ impl AuthorizationRelation {
 
         // 5. Arithmetic encoding agreement (defense in depth).
         let compiled = wiring::compile(policy)?;
-        let (secrets, publics) =
-            wiring::build_inputs(&compiled, policy, statement, witness)?;
+        let (secrets, publics) = wiring::build_inputs(&compiled, policy, statement, witness)?;
         let outputs = wiring::reference_outputs(&compiled.circuit, &secrets, &publics)?;
         let root = outputs.last().copied().ok_or(PaymentError::InvalidPolicy)?;
         if root != wiring::satisfied() {
@@ -78,8 +77,7 @@ impl AuthorizationRelation {
     ) -> Result<bool, PaymentError> {
         let mut next_credential = 0usize;
         let mut cause: Option<PaymentError> = None;
-        let result =
-            Self::eval_node(policy, statement, witness, &mut next_credential, &mut cause);
+        let result = Self::eval_node(policy, statement, witness, &mut next_credential, &mut cause);
         match (result, cause) {
             (true, _) => Ok(true),
             (false, Some(err)) => Err(err),
@@ -100,9 +98,7 @@ impl AuthorizationRelation {
                 let mut valid = 0usize;
                 let mut mismatched = false;
                 for credential in credentials {
-                    let secret = match
-                        witness.credential_secrets.get(*next_credential)
-                    {
+                    let secret = match witness.credential_secrets.get(*next_credential) {
                         Some(secret) => secret,
                         None => {
                             *cause = Some(PaymentError::WitnessCountMismatch);
@@ -130,7 +126,7 @@ impl AuthorizationRelation {
                 }
             }
             Policy::AmountAtMost { limit } => {
-                if statement.amount <= *limit {
+                if statement.amount.value <= *limit {
                     true
                 } else {
                     if cause.is_none() {
@@ -139,12 +135,12 @@ impl AuthorizationRelation {
                     false
                 }
             }
-            Policy::And { policies } => policies.iter().all(|sub| {
-                Self::eval_node(sub, statement, witness, next_credential, cause)
-            }),
-            Policy::Or { policies } => policies.iter().any(|sub| {
-                Self::eval_node(sub, statement, witness, next_credential, cause)
-            }),
+            Policy::And { policies } => policies
+                .iter()
+                .all(|sub| Self::eval_node(sub, statement, witness, next_credential, cause)),
+            Policy::Or { policies } => policies
+                .iter()
+                .any(|sub| Self::eval_node(sub, statement, witness, next_credential, cause)),
         }
     }
 }
@@ -158,7 +154,6 @@ pub fn recompute_commitment(secret: &crypto_core::SecretBytes) -> crypto_core::D
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::statement::PAYMENT_ID_LEN;
     use crypto_core::SecretBytes;
     use policy::{CredentialPolicy, Policy};
 
@@ -175,15 +170,24 @@ mod tests {
     }
 
     fn witness_for(secrets: &[SecretBytes]) -> PrivateWitness {
-        PrivateWitness { credential_secrets: secrets.to_vec() }
+        PrivateWitness {
+            credential_secrets: secrets.to_vec(),
+        }
     }
 
     fn statement(policy_id: policy::PolicyId, amount: u64) -> PaymentStatement {
+        use crate::amount::{Amount, AmountUnit};
         PaymentStatement {
-            payment_id: [3u8; PAYMENT_ID_LEN],
-            amount,
+            payment_id: crypto_core::Digest::new([3u8; 32]),
+            amount: Amount {
+                value: amount,
+                unit: AmountUnit::Cents,
+            },
             recipient_commitment: crypto_core::Digest::new([9u8; 32]),
             policy_id,
+            circuit_id: circuit::CircuitId::from_digest(crypto_core::Digest::new([0; 32])),
+            protocol_version: 1,
+            nonce: [0u8; crate::payment::NONCE_LEN],
         }
     }
 
@@ -310,11 +314,12 @@ mod tests {
             SecretBytes::new(vec![0xf1; 8]),
         ];
         all_secrets.extend(secrets.iter().cloned());
-        let witness = PrivateWitness { credential_secrets: all_secrets };
+        let witness = PrivateWitness {
+            credential_secrets: all_secrets,
+        };
 
         let stmt = statement(policy.policy_id(), 10_000);
-        AuthorizationRelation::validate(&stmt, &witness, &policy)
-            .expect("or-branch authorizes");
+        AuthorizationRelation::validate(&stmt, &witness, &policy).expect("or-branch authorizes");
 
         // A statement bound to a different policy id is rejected.
         let forged = PaymentStatement {
@@ -332,8 +337,9 @@ mod tests {
         let (secrets, credentials) = fixture(2);
         let policy = Policy::Threshold { k: 1, credentials };
 
-        let empty_secret =
-            PrivateWitness { credential_secrets: vec![SecretBytes::new(Vec::new()); 2] };
+        let empty_secret = PrivateWitness {
+            credential_secrets: vec![SecretBytes::new(Vec::new()); 2],
+        };
         assert_eq!(
             AuthorizationRelation::validate(
                 &statement(policy.policy_id(), 1),
@@ -345,16 +351,15 @@ mod tests {
 
         let too_long = PrivateWitness {
             credential_secrets: vec![
-                SecretBytes::new(vec![0u8; crate::MAX_CREDENTIAL_SECRET_LEN + 1]);
+                SecretBytes::new(vec![
+                    0u8;
+                    crate::MAX_CREDENTIAL_SECRET_LEN + 1
+                ]);
                 2
             ],
         };
         assert_eq!(
-            AuthorizationRelation::validate(
-                &statement(policy.policy_id(), 1),
-                &too_long,
-                &policy
-            ),
+            AuthorizationRelation::validate(&statement(policy.policy_id(), 1), &too_long, &policy),
             Err(PaymentError::MalformedCredentialSecret)
         );
 

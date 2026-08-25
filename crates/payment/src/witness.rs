@@ -22,7 +22,11 @@ pub struct PrivateWitness {
 
 impl core::fmt::Debug for PrivateWitness {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "PrivateWitness({} secrets)", self.credential_secrets.len())
+        write!(
+            f,
+            "PrivateWitness({} secrets)",
+            self.credential_secrets.len()
+        )
     }
 }
 
