@@ -6,4 +6,5 @@ license = "MIT OR Apache-2.0"
 description = "Cryptographic payment authorization project - spending policy evaluation"
 
 [dependencies]
+circuit = { path = "../circuit", version = "0.1.0" }
 crypto-core = { path = "../crypto-core", version = "0.1.0" }
