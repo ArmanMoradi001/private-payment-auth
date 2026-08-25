@@ -2,9 +2,11 @@
 name = "sdk"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cryptographic payment authorization project - client SDK"
 
 [dependencies]
-payment = { path = "../payment" }
-proof = { path = "../proof" }
-policy = { path = "../policy" }
-verifier = { path = "../verifier" }
+payment = { path = "../payment", version = "0.1.0" }
+proof = { path = "../proof", version = "0.1.0" }
+policy = { path = "../policy", version = "0.1.0" }
+verifier = { path = "../verifier", version = "0.1.0" }

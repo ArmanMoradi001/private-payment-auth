@@ -2,12 +2,14 @@
 name = "secret-sharing"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cryptographic payment authorization project - Shamir secret sharing"
 
 [dependencies]
 ark-ed25519 = "0.4"
 ark-ff = "0.4"
 ark-std = "0.4"
-crypto-core = { path = "../crypto-core" }
+crypto-core = { path = "../crypto-core", version = "0.1.0" }
 rand_core = "0.6"
 
 [dev-dependencies]

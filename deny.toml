@@ -21,3 +21,9 @@ unknown-git = "deny"
 
 [advisories]
 version = 2
+ignore = [
+    # Transitive dependency of arkworks 0.4 (ark-ff/ark-ec); no safe upgrade available.
+    "RUSTSEC-2024-0388",
+    # Transitive dependency of zerocopy-derive; no safe upgrade available.
+    "RUSTSEC-2024-0436",
+]

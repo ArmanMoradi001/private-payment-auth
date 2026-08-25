@@ -2,18 +2,26 @@
 name = "proof"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cryptographic payment authorization project - non-interactive proofs"
 
 [dependencies]
 ark-ff = "0.4"
-circuit = { path = "../circuit" }
-mpc = { path = "../mpc" }
+circuit = { path = "../circuit", version = "0.1.0" }
+mpc = { path = "../mpc", version = "0.1.0" }
 rand_core = "0.6"
-crypto-core = { path = "../crypto-core" }
-mpcith = { path = "../mpcith" }
+crypto-core = { path = "../crypto-core", version = "0.1.0" }
+mpcith = { path = "../mpcith", version = "0.1.0" }
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.4"
 ark-ed25519 = "0.4"
 rand_chacha = "0.3"
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[[bench]]
+name = "proof_bench"
+harness = false

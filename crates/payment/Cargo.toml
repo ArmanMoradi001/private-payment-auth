@@ -2,8 +2,10 @@
 name = "payment"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cryptographic payment authorization project - payment authorization logic"
 
 [dependencies]
-proof = { path = "../proof" }
-policy = { path = "../policy" }
-crypto-core = { path = "../crypto-core" }
+proof = { path = "../proof", version = "0.1.0" }
+policy = { path = "../policy", version = "0.1.0" }
+crypto-core = { path = "../crypto-core", version = "0.1.0" }

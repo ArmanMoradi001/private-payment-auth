@@ -2,11 +2,13 @@
 name = "circuit"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Cryptographic payment authorization project - arithmetic circuit representation"
 
 [dependencies]
 ark-ff = "0.4"
-crypto-core = { path = "../crypto-core" }
-mpc = { path = "../mpc" }
+crypto-core = { path = "../crypto-core", version = "0.1.0" }
+mpc = { path = "../mpc", version = "0.1.0" }
 rand_core = "0.6"
 
 [dev-dependencies]
