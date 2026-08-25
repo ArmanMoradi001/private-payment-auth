@@ -23,3 +23,7 @@ rand_chacha = "0.3"
 [[bench]]
 name = "authorization_bench"
 harness = false
+
+[[bench]]
+name = "payment_bench"
+harness = false

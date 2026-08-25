@@ -1,10 +1,13 @@
 # Architecture Overview
 
-> **Status: Phase 7 — policy and payment layers added.** The
-> primitives, additive MPC, arithmetic-circuit, MPC-in-the-Head,
-> Fiat–Shamir/proof layers are implemented; Phase 7 adds the
-> `policy` compiler and the `payment` authorization stack. The
-> `verifier` and `sdk` crates remain *intended* architecture only.
+> **Status: Phase 8 — safe amount binding and the payment domain.**
+> The primitives, additive MPC, arithmetic-circuit, MPC-in-the-Head,
+> Fiat–Shamir, `policy`, and `payment` layers are implemented.
+> Phase 8 replaces the provisional field-based amount constraint with
+> a sound dual bit-decomposition range check and adds the explicit
+> payment domain (`Amount`, `Payment`, bound `PaymentStatement` with
+> replay nonces). The `verifier` and `sdk` crates remain *intended*
+> architecture only.
 
 ## Purpose
 
@@ -244,11 +247,30 @@ Implemented in the `payment` crate over `policy`, `proof`,
   Verifiers rebuild circuit, public inputs, and expected outputs from
   public data alone; no witness material exists on that side.
 
-Known limitations of this phase (deliberate, documented): raw-field
-amount comparison is not production-safe, and credential binding
-inside circuits uses commitment-digest equality as a placeholder for
-in-circuit hashing. See ADR [0008](../decisions/0008-private-authorization.md)
-and the threat model.
+### Payment domain and bounded amounts (Phase 8)
+
+- **`Amount`** — an exact `u64` count of a named unit (currently
+  `Cents`), canonically encoded `version ‖ value(u64 BE) ‖ unit`.
+  `u64::MAX` is the ceiling; conversion from field elements is
+  deliberately absent so no wrapped value can masquerade as money.
+- **`Payment`** — payer-side record with a fresh 32-byte nonce;
+  semantic id `SHA-256("private-payment-auth/payment/v1" ‖ encoding)`.
+- **Bound statement** — `PaymentStatement` now pins the semantic
+  payment id, typed amount, recipient commitment, policy id, circuit
+  id, protocol version, and nonce in a fixed-width encoding with a
+  strict decoder (truncation, trailing bytes, unknown versions all
+  rejected).
+- **Sound range check** — the phase 7 window-exclusion amount gadget
+  was removed and replaced by dual bit-decomposition: the witness
+  commits 64 digits of the amount and 64 digits of its difference to
+  the limit; published booleanity/reconstruction sums must be exactly
+  zero. This proves `0 ≤ amount ≤ limit < 2^64` over the integers,
+  closing the wrap-around hole. See ADR
+  [0009](../decisions/0009-payment-domain-and-amounts.md).
+
+Remaining known limitation: credential binding inside circuits still
+uses commitment-digest equality as a placeholder for in-circuit
+hashing (see the threat model).
 
 ## Key Invariants
 

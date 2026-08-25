@@ -67,9 +67,8 @@ pub fn circuit_range_check_outputs(value: u64, limit: u64) -> [Fr; 4] {
     let amount = builder.secret_input();
     let limit_node = builder.constant(Fr::from(limit));
     let bits = RangeCheckBits::declare(&mut builder);
-    let outputs =
-        prove_bounded_difference::<Fr>(&mut builder, amount, limit_node, &bits)
-            .expect("gadget wires validly");
+    let outputs = prove_bounded_difference::<Fr>(&mut builder, amount, limit_node, &bits)
+        .expect("gadget wires validly");
     for node in outputs {
         builder.output(node).expect("output marks validly");
     }

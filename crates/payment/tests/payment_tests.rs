@@ -4,9 +4,9 @@
 
 use crypto_core::{Digest, SecretBytes};
 use payment::{
-    authorize_payment, decompose, payment_circuit_id, verify_payment_authorization,
-    Amount, AmountUnit, AuthorizationRelation, PaymentError, PaymentStatement,
-    PrivateWitness, PROTOCOL_VERSION,
+    authorize_payment, decompose, payment_circuit_id, verify_payment_authorization, Amount,
+    AmountUnit, AuthorizationRelation, PaymentError, PaymentStatement, PrivateWitness,
+    PROTOCOL_VERSION,
 };
 use policy::{credential_commitment, CredentialPolicy, Policy};
 use rand_chacha::ChaCha20Rng;
@@ -30,7 +30,9 @@ fn fixture(amount: u64) -> Fixture {
         .map(|_| {
             let secret = SecretBytes::new(vec![secrets.len() as u8 + 1, 0xbe, 0xef]);
             secrets.push(secret.clone());
-            CredentialPolicy { expected_commitment: credential_commitment(&secret) }
+            CredentialPolicy {
+                expected_commitment: credential_commitment(&secret),
+            }
         })
         .collect();
     let policy = Policy::And {
@@ -41,7 +43,10 @@ fn fixture(amount: u64) -> Fixture {
     };
     let statement = PaymentStatement {
         payment_id: Digest::new([9u8; 32]),
-        amount: Amount { value: amount, unit: AmountUnit::Cents },
+        amount: Amount {
+            value: amount,
+            unit: AmountUnit::Cents,
+        },
         recipient_commitment: Digest::new([0xabu8; 32]),
         policy_id: policy.policy_id(),
         circuit_id: payment_circuit_id(&policy).expect("compiles"),
@@ -49,15 +54,18 @@ fn fixture(amount: u64) -> Fixture {
         nonce: [0x5au8; 32],
     };
     let witness = PrivateWitness::new(secrets, statement.amount, LIMIT);
-    Fixture { policy, statement, witness }
+    Fixture {
+        policy,
+        statement,
+        witness,
+    }
 }
 
 #[test]
 fn valid_two_of_three_with_amount_under_limit_verifies() {
     let f = fixture(42);
     let proof =
-        authorize_payment(&f.statement, &f.witness, &f.policy, &mut rng(1))
-            .expect("proves");
+        authorize_payment(&f.statement, &f.witness, &f.policy, &mut rng(1)).expect("proves");
     assert_eq!(
         verify_payment_authorization(&f.statement, &proof, &f.policy),
         Ok(true)
@@ -83,8 +91,7 @@ fn boundary_amounts_all_verify() {
 fn amounts_above_the_limit_fail_generation() {
     for amount in [LIMIT + 1, 1_000, u64::MAX] {
         let f = fixture(amount);
-        let result =
-            authorize_payment(&f.statement, &f.witness, &f.policy, &mut rng(3));
+        let result = authorize_payment(&f.statement, &f.witness, &f.policy, &mut rng(3));
         assert!(
             matches!(result, Err(PaymentError::AmountExceedsLimit)),
             "amount {amount} must fail generation, got {result:?}"
@@ -117,18 +124,23 @@ fn lying_digit_witnesses_are_rejected() {
 fn statement_mutations_break_verification() {
     let f = fixture(42);
     let proof =
-        authorize_payment(&f.statement, &f.witness, &f.policy, &mut rng(4))
-            .expect("proves");
+        authorize_payment(&f.statement, &f.witness, &f.policy, &mut rng(4)).expect("proves");
 
     let mutations: Vec<(&str, PaymentStatement)> = vec![
         (
             "payment_id",
-            PaymentStatement { payment_id: Digest::new([0xffu8; 32]), ..f.statement },
+            PaymentStatement {
+                payment_id: Digest::new([0xffu8; 32]),
+                ..f.statement
+            },
         ),
         (
             "amount",
             PaymentStatement {
-                amount: Amount { value: 43, unit: AmountUnit::Cents },
+                amount: Amount {
+                    value: 43,
+                    unit: AmountUnit::Cents,
+                },
                 ..f.statement
             },
         ),
@@ -139,7 +151,13 @@ fn statement_mutations_break_verification() {
                 ..f.statement
             },
         ),
-        ("nonce", PaymentStatement { nonce: [0x01u8; 32], ..f.statement }),
+        (
+            "nonce",
+            PaymentStatement {
+                nonce: [0x01u8; 32],
+                ..f.statement
+            },
+        ),
         (
             "policy_id",
             PaymentStatement {
@@ -156,7 +174,10 @@ fn statement_mutations_break_verification() {
         ),
         (
             "version",
-            PaymentStatement { protocol_version: PROTOCOL_VERSION + 1, ..f.statement },
+            PaymentStatement {
+                protocol_version: PROTOCOL_VERSION + 1,
+                ..f.statement
+            },
         ),
     ];
 

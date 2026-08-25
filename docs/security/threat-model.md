@@ -99,15 +99,16 @@ envelope:
   and ids, so verifiers cannot be tricked into checking against a
   different circuit than provers used.
 
-### Explicit limitations (not production-safe yet)
+### Explicit limitations (updated by Phase 8)
 
-1. **Amount comparison uses raw field arithmetic.** The compiled
-   `AmountAtMost` constraint excludes only the window
-   `(limit, AMOUNT_BOUND]`. Amounts above the bound — or wrapped field
-   values outside it — satisfy the constraint. This is *unsound for
-   final financial amounts*; a later phase must introduce a range-
-   checked fixed-width representation (e.g., bit decomposition).
-2. **Credential binding is a placeholder.** In-circuit credential
+1. **RESOLVED (Phase 8): amount comparison no longer uses raw field
+   arithmetic.** The window-exclusion gadget was removed and replaced
+   by dual bit-decomposition: 64 booleanity/reconstruction constraints
+   pin the amount and its difference-to-limit into `[0, 2^64)`,
+   proving `0 ≤ amount ≤ limit` over the integers with no wrap-around.
+   Forged digit witnesses are rejected (`InvalidBitWitness` at the
+   relation layer, nonzero constraint outputs in-circuit).
+2. **Credential binding is still a placeholder.** In-circuit credential
    checks compare commitment digests by field equality; the real hash
    runs outside the circuit. A malicious prover with custom tooling
    could prove satisfiability without knowing the preimages.
@@ -116,8 +117,19 @@ envelope:
 3. **Parameterization is provisional.** `AUTHORIZATION_REPETITIONS =
    12` gives per-artifact forgery probability ≈ (1/3)¹² ≈ 1.9·10⁻⁶;
    production parameters await the cost study phase.
-4. **No replay protection / freshness** at the artifact level yet;
-   `payment_id` uniqueness is an application-layer concern.
+
+### Replay protection model (Phase 8)
+
+Authorization artifacts are bound to a specific
+[`PaymentStatement`] whose canonical encoding includes a fresh
+32-byte `nonce` and the semantic payment id
+(`SHA-256("private-payment-auth/payment/v1" ‖ payment_encoding)`).
+Both are public inputs of the bound circuit and therefore part of the
+Fiat–Shamir transcript: a proof for one statement verifies under no
+other statement, including re-submissions that differ only in nonce.
+Verifiers SHOULD track observed `(payment_id, nonce)` pairs and reject
+duplicates — uniqueness enforcement is an application/verifier-policy
+concern, not a cryptographic one.
 
 ## Secret Handling Notes (Phase 1)
 

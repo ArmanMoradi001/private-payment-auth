@@ -7,30 +7,30 @@
 
 use ark_ff::Zero;
 use payment::{
-    circuit_range_check_outputs, decompose, reference_range_check, Amount, AmountUnit,
-    Payment, PaymentStatement,
+    circuit_range_check_outputs, decompose, reference_range_check, Amount, AmountUnit, Payment,
+    PaymentStatement,
 };
 use proptest::prelude::*;
 
 /// Strategy: `0 ≤ amount ≤ limit ≤ 4096`.
 fn amount_limit_pairs() -> impl Strategy<Value = (u64, u64)> {
-    (0u64..=4096u64)
-        .prop_flat_map(|limit| (0..=limit).prop_map(move |amount| (amount, limit)))
+    (0u64..=4096u64).prop_flat_map(|limit| (0..=limit).prop_map(move |amount| (amount, limit)))
 }
 
 fn sample_statement(seed: u8, value: u64) -> PaymentStatement {
     PaymentStatement {
         payment_id: crypto_core::Digest::new([seed; 32]),
-        amount: Amount { value, unit: AmountUnit::Cents },
+        amount: Amount {
+            value,
+            unit: AmountUnit::Cents,
+        },
         recipient_commitment: crypto_core::Digest::new([seed.wrapping_add(1); 32]),
-        policy_id: policy::PolicyId::from_digest(crypto_core::Digest::new([
-            seed.wrapping_add(2);
-            32
-        ])),
-        circuit_id: circuit::CircuitId::from_digest(crypto_core::Digest::new([
-            seed.wrapping_add(3);
-            32
-        ])),
+        policy_id: policy::PolicyId::from_digest(crypto_core::Digest::new(
+            [seed.wrapping_add(2); 32],
+        )),
+        circuit_id: circuit::CircuitId::from_digest(crypto_core::Digest::new(
+            [seed.wrapping_add(3); 32],
+        )),
         protocol_version: 1,
         nonce: [seed.wrapping_add(4); 32],
     }
