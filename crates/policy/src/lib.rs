@@ -11,10 +11,10 @@
 pub mod compiler;
 pub mod error;
 pub mod policy;
+pub mod range_check;
 
-pub use compiler::{
-    compile, compile_with_layout, CompiledPolicy, PublicSlot, SecretSlot, AMOUNT_BOUND,
-};
+pub use compiler::{compile, compile_with_layout, CompiledPolicy, PublicSlot, SecretSlot};
+pub use range_check::AMOUNT_BIT_LEN;
 pub use error::PolicyError;
 pub use policy::{
     credential_commitment, CredentialPolicy, Policy, PolicyId, CREDENTIAL_COMMITMENT_DOMAIN,

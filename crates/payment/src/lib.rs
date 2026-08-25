@@ -14,6 +14,7 @@ pub mod amount;
 pub mod authorization;
 pub mod error;
 pub mod payment;
+pub mod range_check;
 pub mod relation;
 pub mod statement;
 mod wiring;
@@ -24,6 +25,7 @@ pub use authorization::{authorize, verify_authorization, AUTHORIZATION_REPETITIO
 pub use error::PaymentError;
 pub use payment::{Payment, NONCE_LEN as PAYMENT_NONCE_LEN, PAYMENT_ID_DOMAIN, PAYMENT_ID_LEN};
 pub use proof::PROTOCOL_VERSION;
+pub use range_check::{circuit_range_check_outputs, decompose, reference_range_check};
 pub use relation::{recompute_commitment, AuthorizationRelation};
 pub use statement::{
     PaymentStatement, StatementError, NONCE_LEN as STATEMENT_NONCE_LEN, STATEMENT_VERSION,
