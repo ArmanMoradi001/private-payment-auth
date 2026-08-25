@@ -6,5 +6,9 @@ license = "MIT OR Apache-2.0"
 description = "Cryptographic payment authorization project - spending policy evaluation"
 
 [dependencies]
+ark-ff = "0.4"
 circuit = { path = "../circuit", version = "0.1.0" }
 crypto-core = { path = "../crypto-core", version = "0.1.0" }
+
+[dev-dependencies]
+ark-ed25519 = "0.4"

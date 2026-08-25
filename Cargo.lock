@@ -720,6 +720,9 @@ dependencies = [
 name = "policy"
 version = "0.1.0"
 dependencies = [
+ "ark-ed25519",
+ "ark-ff",
+ "circuit",
  "crypto-core",
 ]
 
@@ -745,12 +748,18 @@ dependencies = [
 name = "proof"
 version = "0.1.0"
 dependencies = [
+ "ark-ed25519",
  "ark-ff",
  "circuit",
+ "criterion",
  "crypto-core",
  "mpc",
  "mpcith",
+ "proptest",
+ "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
