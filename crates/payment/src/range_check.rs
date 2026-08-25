@@ -67,10 +67,13 @@ pub fn circuit_range_check_outputs(value: u64, limit: u64) -> [Fr; 4] {
     let amount = builder.secret_input();
     let limit_node = builder.constant(Fr::from(limit));
     let bits = RangeCheckBits::declare(&mut builder);
-    let outputs = prove_bounded_difference::<Fr>(&mut builder, amount, limit_node, &bits)
-        .expect("gadget wires validly");
+    let outputs =
+        prove_bounded_difference::<Fr>(&mut builder, amount, limit_node, &bits)
+            .expect("gadget wires validly");
+    for node in outputs {
+        builder.output(node).expect("output marks validly");
+    }
     let circuit = builder.build().expect("range-check circuit validates");
-
     let mut secrets = Vec::with_capacity(1 + 2 * AMOUNT_BIT_LEN);
     secrets.push(Fr::from(value));
     for bit in decompose(value) {
@@ -80,6 +83,8 @@ pub fn circuit_range_check_outputs(value: u64, limit: u64) -> [Fr; 4] {
         secrets.push(Fr::from(u64::from(bit)));
     }
 
+    // `evaluate_reference` returns exactly the published outputs, in
+    // the order the ids were marked.
     let values = evaluate_reference(&circuit, &secrets, &[]).expect("evaluates");
-    outputs.map(|id| values[id.as_usize()])
+    values.try_into().expect("four published outputs")
 }
