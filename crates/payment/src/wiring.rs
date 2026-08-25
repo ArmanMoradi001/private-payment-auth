@@ -28,21 +28,90 @@ pub(crate) fn digest_to_field(digest: &crypto_core::Digest) -> Fr {
     Fr::from_le_bytes_mod_order(digest.as_bytes())
 }
 
-/// Builds both input vectors for `statement`/`witness` under the
-/// compiled `policy` circuit, solving auxiliary witnesses so every
-/// constraint wire reaches its forced value (`1` when satisfied).
+/// The three public binding values tying a proof to its
+/// [`PaymentStatement`]: amount, recipient commitment, payment id.
+///
+/// They appear as extra public inputs multiplied into the circuit's
+/// root, so the Fiat–Shamir transcript (which hashes the full public
+/// input vector) commits to the exact payment being authorized.
+pub(crate) fn binding_values(statement: &PaymentStatement) -> [Fr; 3] {
+    [
+        Fr::from(statement.amount),
+        digest_to_field(&statement.recipient_commitment),
+        digest_to_field(&crypto_core::Digest::new(statement.payment_id)),
+    ]
+}
+
+/// Extends a compiled policy circuit with [`binding_values`] leaves
+/// multiplied into the root wire.
+///
+/// The resulting circuit has one output computing
+/// `root_policy · b₁·b₂·b₃`. Its reference value is fully determined
+/// by public data, which lets verifiers reconstruct the expected
+/// outputs without any witness.
 ///
 /// # Errors
 ///
-/// Returns [`PaymentError::WitnessCountMismatch`] if the witness does
-/// not cover the policy's credentials and
-/// [`PaymentError::InvalidPolicy`] if the layout is inconsistent.
-pub(crate) fn build_inputs(
+/// Returns [`PaymentError::InvalidPolicy`] if the extended circuit
+/// fails validation (an internal invariant).
+pub(crate) fn bind_statement(
+    compiled: &CompiledPolicy<Fr>,
+    _statement: &PaymentStatement,
+) -> Result<circuit::Circuit<Fr>, PaymentError> {
+    use circuit::Node;
+
+    let base = &compiled.circuit;
+    let mut nodes: Vec<Node<Fr>> = base.nodes().to_vec();
+    let num_secret = base.num_secret_inputs();
+    let num_public = base.num_public_inputs();
+
+    // Binding public leaves.
+    let leaves: Vec<NodeId> = (0..3)
+        .map(|_| {
+            let id = NodeId::new(nodes.len() as u32);
+            nodes.push(Node::PublicInput);
+            id
+        })
+        .collect();
+    let product = leaves.into_iter().reduce(|a, b| {
+        let id = NodeId::new(nodes.len() as u32);
+        nodes.push(Node::Mul(a, b));
+        id
+    });
+    let binding_product = product.ok_or(PaymentError::InvalidPolicy)?;
+
+    // Multiply the binding product into the root wire.
+    let old_root = *base.outputs().first().ok_or(PaymentError::InvalidPolicy)?;
+    let final_node = NodeId::new(nodes.len() as u32);
+    nodes.push(Node::Mul(old_root, binding_product));
+
+    let bound = circuit::Circuit::new(
+        nodes,
+        num_secret,
+        num_public + 3,
+        vec![final_node],
+    );
+    bound.validate().map_err(|_| PaymentError::InvalidPolicy)?;
+    Ok(bound)
+}
+
+/// Builds the public input vector for the bound circuit: the policy
+/// slots followed by the statement binding values.
+pub(crate) fn bound_public_inputs(
     compiled: &CompiledPolicy<Fr>,
     policy: &policy::Policy,
     statement: &PaymentStatement,
-    witness: &PrivateWitness,
-) -> Result<(Vec<Fr>, Vec<Fr>), PaymentError> {
+) -> Result<Vec<Fr>, PaymentError> {
+    let mut publics = policy_public_inputs(compiled, policy)?;
+    publics.extend(binding_values(statement));
+    Ok(publics)
+}
+
+/// Builds the public input vector for the unbound policy circuit.
+pub(crate) fn policy_public_inputs(
+    compiled: &CompiledPolicy<Fr>,
+    policy: &policy::Policy,
+) -> Result<Vec<Fr>, PaymentError> {
     let mut commitments = Vec::new();
     let mut limits = Vec::new();
     gather_policy_data(policy, &mut commitments, &mut limits);
@@ -64,6 +133,25 @@ pub(crate) fn build_inputs(
             }
         }
     }
+    Ok(publics)
+}
+
+/// Builds both input vectors for `statement`/`witness` under the
+/// compiled `policy` circuit, solving auxiliary witnesses so every
+/// constraint wire reaches its forced value (`1` when satisfied).
+///
+/// # Errors
+///
+/// Returns [`PaymentError::WitnessCountMismatch`] if the witness does
+/// not cover the policy's credentials and
+/// [`PaymentError::InvalidPolicy`] if the layout is inconsistent.
+pub(crate) fn build_inputs(
+    compiled: &CompiledPolicy<Fr>,
+    policy: &policy::Policy,
+    statement: &PaymentStatement,
+    witness: &PrivateWitness,
+) -> Result<(Vec<Fr>, Vec<Fr>), PaymentError> {
+    let publics = policy_public_inputs(compiled, policy)?;
 
     let mut secrets = Vec::with_capacity(compiled.secret_slots.len());
     let mut aux_positions = Vec::new();

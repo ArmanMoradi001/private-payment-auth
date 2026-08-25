@@ -13,6 +13,7 @@ crypto-core = { path = "../crypto-core", version = "0.1.0" }
 mpc = { path = "../mpc", version = "0.1.0" }
 policy = { path = "../policy", version = "0.1.0" }
 proof = { path = "../proof", version = "0.1.0" }
+rand_core = "0.6"
 
 [dev-dependencies]
 rand_chacha = "0.3"

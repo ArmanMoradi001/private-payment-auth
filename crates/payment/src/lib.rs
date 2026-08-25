@@ -10,12 +10,14 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod authorization;
 pub mod error;
 pub mod relation;
 pub mod statement;
 pub mod witness;
 mod wiring;
 
+pub use authorization::{authorize, verify_authorization, AUTHORIZATION_REPETITIONS};
 pub use error::PaymentError;
 pub use relation::{recompute_commitment, AuthorizationRelation};
 pub use statement::{PaymentStatement, PAYMENT_ID_LEN, STATEMENT_VERSION};
