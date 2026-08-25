@@ -20,6 +20,10 @@ pub enum PaymentError {
     ThresholdNotMet,
     /// The payment amount exceeds the policy's spending cap.
     AmountExceedsLimit,
+    /// The witness amount disagrees with the statement's amount.
+    AmountMismatch,
+    /// A claimed binary digit does not match the value it decomposes.
+    InvalidBitWitness,
     /// The combined policy tree evaluates to “not authorized”.
     PolicyNotSatisfied,
     /// Generating the non-interactive proof failed.
@@ -40,6 +44,8 @@ impl fmt::Display for PaymentError {
             Self::CredentialCommitmentMismatch => "credential does not match its commitment",
             Self::ThresholdNotMet => "credential threshold not met",
             Self::AmountExceedsLimit => "amount exceeds spending limit",
+            Self::AmountMismatch => "witness amount differs from statement",
+            Self::InvalidBitWitness => "range-check digit witness is inconsistent",
             Self::PolicyNotSatisfied => "policy not satisfied",
             Self::ProofGenerationFailed => "proof generation failed",
             Self::ProofRejected => "proof rejected",

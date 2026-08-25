@@ -1,14 +1,19 @@
 //! Criterion benchmarks for the payment authorization pipeline:
 //! policy compilation, proof generation, and verification for a small
-//! (2-of-3 + amount cap) authorization.
+//! (2-of-3 + bounded amount) authorization.
 
 use ark_ed25519::Fr;
 use criterion::{criterion_group, criterion_main, Criterion};
 use crypto_core::SecretBytes;
-use payment::{authorize, verify_authorization, PaymentStatement, PrivateWitness};
+use payment::{
+    authorize_payment, payment_circuit_id, verify_payment_authorization, Amount, AmountUnit,
+    PaymentStatement, PrivateWitness, PROTOCOL_VERSION,
+};
 use policy::{compile, credential_commitment, CredentialPolicy, Policy};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
+
+const LIMIT: u64 = 100;
 
 fn policy_2_of_3() -> (Policy, Vec<SecretBytes>) {
     let mut secrets = Vec::new();
@@ -24,23 +29,23 @@ fn policy_2_of_3() -> (Policy, Vec<SecretBytes>) {
     let policy = Policy::And {
         policies: vec![
             Policy::Threshold { k: 2, credentials },
-            Policy::AmountAtMost { limit: 100 },
+            Policy::AmountAtMost { limit: LIMIT },
         ],
     };
     (policy, secrets)
 }
 
-fn statement(policy_id: policy::PolicyId) -> PaymentStatement {
+fn statement(policy: &Policy) -> PaymentStatement {
     PaymentStatement {
         payment_id: crypto_core::Digest::new([9; 32]),
-        amount: payment::Amount {
+        amount: Amount {
             value: 42,
-            unit: payment::AmountUnit::Cents,
+            unit: AmountUnit::Cents,
         },
         recipient_commitment: crypto_core::Digest::new([0xab; 32]),
-        policy_id,
-        circuit_id: circuit::CircuitId::from_digest(crypto_core::Digest::new([0; 32])),
-        protocol_version: payment::PROTOCOL_VERSION,
+        policy_id: policy.policy_id(),
+        circuit_id: payment_circuit_id(policy).expect("compiles"),
+        protocol_version: PROTOCOL_VERSION,
         nonce: [0u8; 32],
     }
 }
@@ -54,14 +59,12 @@ fn bench_compile(c: &mut Criterion) {
 
 fn bench_prove(c: &mut Criterion) {
     let (policy, secrets) = policy_2_of_3();
-    let stmt = statement(policy.policy_id());
-    let witness = PrivateWitness {
-        credential_secrets: secrets,
-    };
+    let stmt = statement(&policy);
+    let witness = PrivateWitness::new(secrets, stmt.amount, LIMIT);
 
     c.bench_function("authorization/prove_2of3_reps12", |b| {
         b.iter(|| {
-            authorize(
+            authorize_payment(
                 std::hint::black_box(&stmt),
                 &witness,
                 &policy,
@@ -74,16 +77,15 @@ fn bench_prove(c: &mut Criterion) {
 
 fn bench_verify(c: &mut Criterion) {
     let (policy, secrets) = policy_2_of_3();
-    let stmt = statement(policy.policy_id());
-    let witness = PrivateWitness {
-        credential_secrets: secrets,
-    };
-    let proof =
-        authorize(&stmt, &witness, &policy, &mut ChaCha20Rng::seed_from_u64(2)).expect("proves");
+    let stmt = statement(&policy);
+    let witness = PrivateWitness::new(secrets, stmt.amount, LIMIT);
+    let proof = authorize_payment(&stmt, &witness, &policy, &mut ChaCha20Rng::seed_from_u64(2))
+        .expect("proves");
 
     c.bench_function("authorization/verify_2of3_reps12", |b| {
         b.iter(|| {
-            verify_authorization(std::hint::black_box(&stmt), &proof, &policy).expect("verifies")
+            verify_payment_authorization(std::hint::black_box(&stmt), &proof, &policy)
+                .expect("verifies")
         })
     });
 }

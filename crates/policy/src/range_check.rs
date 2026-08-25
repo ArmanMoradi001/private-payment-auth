@@ -45,11 +45,13 @@ impl RangeCheckBits {
     /// declaration order (all value digits, then all difference
     /// digits, each little-endian).
     pub fn declare<F: PrimeField>(builder: &mut CircuitBuilder<F>) -> Self {
-        let value_bits: [NodeId; AMOUNT_BIT_LEN] =
-            std::array::from_fn(|_| builder.secret_input());
+        let value_bits: [NodeId; AMOUNT_BIT_LEN] = std::array::from_fn(|_| builder.secret_input());
         let difference_bits: [NodeId; AMOUNT_BIT_LEN] =
             std::array::from_fn(|_| builder.secret_input());
-        Self { value_bits, difference_bits }
+        Self {
+            value_bits,
+            difference_bits,
+        }
     }
 }
 
@@ -74,12 +76,15 @@ pub fn prove_bounded_difference<F: PrimeField>(
     limit: NodeId,
     bits: &RangeCheckBits,
 ) -> Result<RangeCheckOutputs, PolicyError> {
-    let value_checks =
-        emit_side::<F>(builder, value, &bits.value_bits)?;
+    let value_checks = emit_side::<F>(builder, value, &bits.value_bits)?;
     let difference = subtract(builder, limit, value)?;
-    let difference_checks =
-        emit_side::<F>(builder, difference, &bits.difference_bits)?;
-    Ok([value_checks.0, value_checks.1, difference_checks.0, difference_checks.1])
+    let difference_checks = emit_side::<F>(builder, difference, &bits.difference_bits)?;
+    Ok([
+        value_checks.0,
+        value_checks.1,
+        difference_checks.0,
+        difference_checks.1,
+    ])
 }
 
 /// Emits `(bit_booleanity_sum, reconstruction_diff)` for one side.
@@ -98,8 +103,9 @@ fn emit_side<F: PrimeField>(
         booleanity = add_gate(builder, booleanity, term)?;
 
         // Reconstruction weight: b · 2^index.
-        let weight =
-            1u64.checked_shl(index as u32).ok_or(PolicyError::CircuitCompilationFailed)?;
+        let weight = 1u64
+            .checked_shl(index as u32)
+            .ok_or(PolicyError::CircuitCompilationFailed)?;
         let weighted = mul_by_constant(builder, *bit, F::from(weight))?;
         reconstruction = add_gate(builder, reconstruction, weighted)?;
     }
@@ -138,7 +144,9 @@ fn add_gate<F: PrimeField>(
     a: NodeId,
     b: NodeId,
 ) -> Result<NodeId, PolicyError> {
-    builder.add(a, b).map_err(|_| PolicyError::CircuitCompilationFailed)
+    builder
+        .add(a, b)
+        .map_err(|_| PolicyError::CircuitCompilationFailed)
 }
 
 fn mul_gate<F: PrimeField>(
@@ -146,7 +154,9 @@ fn mul_gate<F: PrimeField>(
     a: NodeId,
     b: NodeId,
 ) -> Result<NodeId, PolicyError> {
-    builder.mul(a, b).map_err(|_| PolicyError::CircuitCompilationFailed)
+    builder
+        .mul(a, b)
+        .map_err(|_| PolicyError::CircuitCompilationFailed)
 }
 
 /// `a − b` as `a + (−1)·b`.

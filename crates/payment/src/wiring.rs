@@ -26,16 +26,19 @@ pub(crate) fn digest_to_field(digest: &crypto_core::Digest) -> Fr {
     Fr::from_le_bytes_mod_order(digest.as_bytes())
 }
 
-/// The three public binding values tying a proof to its
-/// [`PaymentStatement`]: amount, recipient commitment, payment id.
+/// The four public binding values tying a proof to its
+/// [`PaymentStatement`]: amount, recipient commitment, nonce, and
+/// payment id.
 ///
 /// They appear as extra public inputs multiplied into the circuit's
 /// root, so the Fiat–Shamir transcript (which hashes the full public
-/// input vector) commits to the exact payment being authorized.
-pub(crate) fn binding_values(statement: &PaymentStatement) -> [Fr; 3] {
+/// input vector) commits to the exact payment — including its
+/// replay-protection nonce — that is being authorized.
+pub(crate) fn binding_values(statement: &PaymentStatement) -> [Fr; 4] {
     [
         Fr::from(statement.amount.value),
         digest_to_field(&statement.recipient_commitment),
+        digest_to_field(&crypto_core::Digest::new(statement.nonce)),
         digest_to_field(&statement.payment_id),
     ]
 }
@@ -54,7 +57,6 @@ pub(crate) fn binding_values(statement: &PaymentStatement) -> [Fr; 3] {
 /// fails validation (an internal invariant).
 pub(crate) fn bind_statement(
     compiled: &CompiledPolicy<Fr>,
-    _statement: &PaymentStatement,
 ) -> Result<circuit::Circuit<Fr>, PaymentError> {
     use circuit::Node;
 
@@ -63,8 +65,9 @@ pub(crate) fn bind_statement(
     let num_secret = base.num_secret_inputs();
     let num_public = base.num_public_inputs();
 
-    // Binding public leaves.
-    let leaves: Vec<NodeId> = (0..3)
+    // Binding public leaves (amount, recipient, nonce, payment id).
+    const BINDING_SLOTS: usize = 4;
+    let leaves: Vec<NodeId> = (0..BINDING_SLOTS)
         .map(|_| {
             let id = NodeId::new(nodes.len() as u32);
             nodes.push(Node::PublicInput);
@@ -78,12 +81,16 @@ pub(crate) fn bind_statement(
     });
     let binding_product = product.ok_or(PaymentError::InvalidPolicy)?;
 
-    // Multiply the binding product into the root wire.
-    let old_root = *base.outputs().first().ok_or(PaymentError::InvalidPolicy)?;
+    // Multiply the binding product into the ROOT wire (the last
+    // output); range-check constraint outputs pass through untouched.
+    let old_root = *base.outputs().last().ok_or(PaymentError::InvalidPolicy)?;
     let final_node = NodeId::new(nodes.len() as u32);
     nodes.push(Node::Mul(old_root, binding_product));
 
-    let bound = circuit::Circuit::new(nodes, num_secret, num_public + 3, vec![final_node]);
+    let mut outputs = base.outputs().to_vec();
+    *outputs.last_mut().ok_or(PaymentError::InvalidPolicy)? = final_node;
+
+    let bound = circuit::Circuit::new(nodes, num_secret, num_public + BINDING_SLOTS, outputs);
     bound.validate().map_err(|_| PaymentError::InvalidPolicy)?;
     Ok(bound)
 }
@@ -145,7 +152,6 @@ pub(crate) fn policy_public_inputs(
 pub(crate) fn build_inputs(
     compiled: &CompiledPolicy<Fr>,
     policy: &policy::Policy,
-    statement: &PaymentStatement,
     witness: &PrivateWitness,
 ) -> Result<(Vec<Fr>, Vec<Fr>), PaymentError> {
     let publics = policy_public_inputs(compiled, policy)?;
@@ -166,7 +172,13 @@ pub(crate) fn build_inputs(
                 // always matches its expected commitment.
                 secrets.push(digest_to_field(&credential_commitment(secret)));
             }
-            SecretSlot::Amount => secrets.push(Fr::from(statement.amount.value)),
+            SecretSlot::Amount => secrets.push(Fr::from(witness.amount.value)),
+            SecretSlot::AmountBit(i) => {
+                secrets.push(Fr::from(u64::from(witness.amount_bits[*i])));
+            }
+            SecretSlot::DifferenceBit(i) => {
+                secrets.push(Fr::from(u64::from(witness.difference_bits[*i])));
+            }
             SecretSlot::Auxiliary => {
                 aux_positions.push(index);
                 secrets.push(Fr::zero());

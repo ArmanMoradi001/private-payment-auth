@@ -21,7 +21,9 @@ mod wiring;
 pub mod witness;
 
 pub use amount::{Amount, AmountError, AmountUnit};
-pub use authorization::{authorize, verify_authorization, AUTHORIZATION_REPETITIONS};
+pub use authorization::{
+    authorize_payment, payment_circuit_id, verify_payment_authorization, AUTHORIZATION_REPETITIONS,
+};
 pub use error::PaymentError;
 pub use payment::{Payment, NONCE_LEN as PAYMENT_NONCE_LEN, PAYMENT_ID_DOMAIN, PAYMENT_ID_LEN};
 pub use proof::PROTOCOL_VERSION;

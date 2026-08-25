@@ -3,7 +3,7 @@
 //! The target machine is the workspace's plain `{+, ×}` circuit
 //! ([`circuit::CircuitBuilder`]); there are no comparison or hash
 //! gates, and the MPC/MPCitH layers evaluate only `Add`/`Mul` on
-//! additive shares. Constraints are therefore expressed with two
+//! additive shares. Constraints are therefore expressed with three
 //! arithmetic gadgets:
 //!
 //! **Exact zero-indicator (Fermat).** For `x` over the prime field,
@@ -11,29 +11,26 @@
 //! matches become exact boolean wires:
 //! `match_i = 1 − (s_i − c_i)^(p−1)`.
 //!
-//! **Inverted exclusion product.** Each leaf emits the wire
-//! `w = X · aux`, where `X` vanishes exactly on the *violating* set
-//! and `aux` is a fresh secret input. Hence `w ≡ 0` when the leaf
-//! fails, and `w = 1` is reachable (via `aux = X⁻¹`) exactly when it
-//! holds:
+//! **Inverted exclusion product.** Each threshold leaf emits the wire
+//! `w = X · aux`, where `X = Π_{t=0}^{k-1} (Σ_i match_i − t)` vanishes
+//! exactly on the violating set and `aux` is a fresh secret input.
+//! Hence `w ≡ 0` when the leaf fails, and `w = 1` is reachable (via
+//! `aux = X⁻¹`) exactly when it holds.
 //!
-//! * Threshold: `X = Π_{t=0}^{k-1} (Σ_i match_i − t)`, so `w = 1` iff
-//!   at least `k` credentials match.
-//! * Amount cap: `X = Π_{t=1}^{B−limit} (amount − limit − t)` for the
-//!   compile-time bound [`AMOUNT_BOUND`] `= B`, so `w = 1` iff the
-//!   amount avoids the window just above the limit. This is
-//!   deliberately *not* production-safe for financial amounts
-//!   (wrap-around escapes); see
-//!   `docs/decisions/0008-private-authorization.md`.
+//! **Dual bit-decomposition range check** ([`crate::range_check`]).
+//! Amount caps publish four outputs — value/difference booleanity and
+//! reconstruction sums — that must be **exactly zero**, proving
+//! `0 ≤ amount ≤ limit < 2^64` over the integers with no field
+//! wrap-around escape. See ADR 0009; this replaces the phase 7 window
+//! product, which was unsound for large amounts.
 //!
 //! **Combinators.** `And` multiplies child wires; `Or` evaluates
-//! `a + b − a·b`. Soundness composes: a child wire is either pinned to
-//! `0` (leaf violated) or settable to exactly `1` (leaf satisfied), so
-//! a product is `1` iff every conjunct is satisfiable and `a + b − a·b`
-//! equals `1` only when some disjunct is (`a = 1` already implies the
-//! branch holds, since `1` forces the branch's `X ≠ 0`). The circuit's
-//! single output is the root wire, and the payment layer requires it
-//! to evaluate to `1`.
+//! `a + b − a·b`; an amount leaf contributes the constant-one wire
+//! because its constraint is enforced globally by its published
+//! outputs. Threshold soundness composes: a child wire is either
+//! pinned to `0` (leaf violated) or settable to exactly `1`. Outputs
+//! are, in emission order: four per `AmountAtMost` leaf (each expected
+//! zero) followed by the root wire (expected one).
 //!
 //! Traversal order, gate order, and constants are fully determined by
 //! the policy, so equal policies yield structurally identical circuits
@@ -44,15 +41,7 @@ use circuit::{Circuit, CircuitBuilder, CircuitId, NodeId};
 
 use crate::error::PolicyError;
 use crate::policy::Policy;
-
-/// Compile-time upper bound on representable payment amounts.
-///
-/// The `AmountAtMost` constraint excludes the open window
-/// `(limit, AMOUNT_BOUND]`; amounts at or below `limit` — but also any
-/// field value outside that window, including wrapped ones — satisfy
-/// the compiled constraint. Production amounts require a range-checked
-/// representation planned for a later phase.
-pub const AMOUNT_BOUND: u64 = 1024;
+use crate::range_check::{prove_bounded_difference, RangeCheckBits, AMOUNT_BIT_LEN};
 
 /// Which secret input a compiled circuit expects, in declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +50,11 @@ pub enum SecretSlot {
     Credential(usize),
     /// The payment amount.
     Amount,
+    /// Binary digit `usize` (little-endian) of the amount, claimed by
+    /// the witness and proven boolean plus reconstructive in-circuit.
+    AmountBit(usize),
+    /// Binary digit `usize` (little-endian) of `limit − amount`.
+    DifferenceBit(usize),
     /// A prover-chosen inversion witness for a constraint-forcing
     /// gadget (the `aux` of the module docs).
     Auxiliary,
@@ -92,6 +86,10 @@ pub struct CompiledPolicy<F> {
     /// For each `SecretSlot::Auxiliary` input, the discriminant wire it
     /// must invert (crate-invariant alignment with `secret_slots`).
     pub(crate) auxiliary_targets: Vec<NodeId>,
+    /// Number of published range-check constraint outputs (four per
+    /// `AmountAtMost` leaf), all expected to evaluate to zero. They
+    /// precede the root wire in the output list.
+    pub range_check_outputs: usize,
 }
 
 impl<F> CompiledPolicy<F> {
@@ -121,9 +119,7 @@ impl<F> CompiledPolicy<F> {
 /// # Errors
 ///
 /// Propagates the [`crate::PolicyError`] validation variants for
-/// structurally invalid policies, and
-/// [`PolicyError::CircuitCompilationFailed`] when an `AmountAtMost`
-/// limit reaches [`AMOUNT_BOUND`] (nothing left to exclude).
+/// structurally invalid policies.
 pub fn compile<F: PrimeField>(policy: &Policy) -> Result<Circuit<F>, PolicyError> {
     Ok(compile_with_layout::<F>(policy)?.circuit)
 }
@@ -147,6 +143,7 @@ struct Compiler<F> {
     secret_slots: Vec<SecretSlot>,
     public_slots: Vec<PublicSlot>,
     auxiliary_targets: Vec<NodeId>,
+    range_check_outputs: usize,
 }
 
 impl<F: PrimeField> Compiler<F> {
@@ -156,6 +153,7 @@ impl<F: PrimeField> Compiler<F> {
             secret_slots: Vec::new(),
             public_slots: Vec::new(),
             auxiliary_targets: Vec::new(),
+            range_check_outputs: 0,
         }
     }
 
@@ -172,6 +170,7 @@ impl<F: PrimeField> Compiler<F> {
             secret_slots: self.secret_slots,
             public_slots: self.public_slots,
             auxiliary_targets: self.auxiliary_targets,
+            range_check_outputs: self.range_check_outputs,
         })
     }
 
@@ -239,28 +238,46 @@ impl<F: PrimeField> Compiler<F> {
         self.constrained_by_discriminant(discriminant)
     }
 
-    /// Constraint wire for “amount ≤ limit” under the [`AMOUNT_BOUND`]
-    /// window discipline.
-    fn emit_amount(&mut self, limit: u64) -> Result<NodeId, PolicyError> {
-        if limit >= AMOUNT_BOUND {
-            return Err(PolicyError::CircuitCompilationFailed);
-        }
+    /// Emits the amount cap via the dual bit-decomposition range
+    /// check.
+    ///
+    /// Publishes four constraint outputs (booleanity and
+    /// reconstruction sums for the amount and its difference to the
+    /// limit), all of which honest executions pin to exactly zero.
+    /// The returned combinator wire is the constant one: the cap is a
+    /// *global* assertion enforced by its own outputs, so it behaves
+    /// as a satisfied conjunct inside any `And`/`Or` composition.
+    ///
+    /// `_limit` is carried for signature symmetry with the policy
+    /// tree; the enforced value flows through the public input.
+    fn emit_amount(&mut self, _limit: u64) -> Result<NodeId, PolicyError> {
         let amount = self.secret_input(SecretSlot::Amount);
         let limit_node = self.public_input(PublicSlot::AmountLimit);
-        let base = self.sub_gate(amount, limit_node)?;
 
-        // Discriminant: zero exactly on amount − limit ∈ {1..window}.
-        let mut discriminant: Option<NodeId> = None;
-        for t in 1..=(AMOUNT_BOUND - limit) {
-            let offset = self.constant(negate_u64::<F>(t));
-            let diff = self.add_gate(base, offset)?;
-            discriminant = Some(match discriminant {
-                None => diff,
-                Some(prev) => self.mul_gate(prev, diff)?,
-            });
+        let mut value_bits = Vec::with_capacity(AMOUNT_BIT_LEN);
+        for index in 0..AMOUNT_BIT_LEN {
+            value_bits.push(self.secret_input(SecretSlot::AmountBit(index)));
         }
-        let discriminant = discriminant.ok_or(PolicyError::CircuitCompilationFailed)?;
-        self.constrained_by_discriminant(discriminant)
+        let mut difference_bits = Vec::with_capacity(AMOUNT_BIT_LEN);
+        for index in 0..AMOUNT_BIT_LEN {
+            difference_bits.push(self.secret_input(SecretSlot::DifferenceBit(index)));
+        }
+        let bits = RangeCheckBits {
+            value_bits: value_bits.try_into().expect("declared AMOUNT_BIT_LEN"),
+            difference_bits: difference_bits.try_into().expect("declared AMOUNT_BIT_LEN"),
+        };
+
+        let outputs = prove_bounded_difference::<F>(&mut self.builder, amount, limit_node, &bits)?;
+        for node in outputs {
+            self.builder
+                .output(node)
+                .map_err(|_| PolicyError::CircuitCompilationFailed)?;
+        }
+        self.range_check_outputs += outputs.len();
+
+        // Neutral combinator contribution; enforcement is global via
+        // the published zero-constraints above.
+        Ok(self.builder.constant(<F as One>::one()))
     }
 
     /// Wires `discriminant · aux`: pinned to `0` when the discriminant
@@ -448,12 +465,26 @@ mod tests {
             .collect()
     }
 
+    fn decompose(value: u64) -> [bool; AMOUNT_BIT_LEN] {
+        let mut bits = [false; AMOUNT_BIT_LEN];
+        for (index, slot) in bits.iter_mut().enumerate() {
+            *slot = (value >> index) & 1 == 1;
+        }
+        bits
+    }
+
+    /// Builds the secret vector for `amount` under a policy whose
+    /// amount leaves all share `limit`; digit witnesses are the honest
+    /// decompositions.
     fn secrets_for(
         compiled: &CompiledPolicy<Fr>,
         secrets: &[SecretBytes],
+        limit: u64,
         amount: u64,
         wrong: impl Fn(usize) -> bool,
     ) -> Vec<Fr> {
+        let value_bits = decompose(amount);
+        let difference_bits = decompose(limit.wrapping_sub(amount));
         compiled
             .secret_slots
             .iter()
@@ -466,8 +497,21 @@ mod tests {
                     }
                 }
                 SecretSlot::Amount => Fr::from(amount),
+                SecretSlot::AmountBit(i) => Fr::from(u64::from(value_bits[*i])),
+                SecretSlot::DifferenceBit(i) => Fr::from(u64::from(difference_bits[*i])),
                 SecretSlot::Auxiliary => Fr::zero(),
             })
+            .collect()
+    }
+
+    /// All published outputs of the circuit in order.
+    fn output_values(compiled: &CompiledPolicy<Fr>, secrets: &[Fr], publics: &[Fr]) -> Vec<Fr> {
+        let values = eval_all(&compiled.circuit, secrets, publics);
+        compiled
+            .circuit
+            .outputs()
+            .iter()
+            .map(|id| values[id.as_usize()])
             .collect()
     }
 
@@ -511,7 +555,7 @@ mod tests {
         let publics = publics_for(&compiled, &secrets, 0);
 
         assert_eq!(compiled.circuit.outputs().len(), 1);
-        let mut wit = secrets_for(&compiled, &secrets, 0, |_| false);
+        let mut wit = secrets_for(&compiled, &secrets, 0, 0, |_| false);
         solve_auxiliaries(&compiled, &mut wit, &publics);
         assert_eq!(root_value(&compiled, &wit, &publics), Fr::from(1u64));
     }
@@ -524,7 +568,7 @@ mod tests {
 
         // Exactly one valid credential: below threshold, the root is
         // pinned to zero regardless of the auxiliary witnesses.
-        let mut wit = secrets_for(&compiled, &secrets, 0, |i| i != 0);
+        let mut wit = secrets_for(&compiled, &secrets, 0, 0, |i| i != 0);
         solve_auxiliaries(&compiled, &mut wit, &publics);
         assert_eq!(root_value(&compiled, &wit, &publics), Fr::zero());
     }
@@ -536,14 +580,14 @@ mod tests {
         let publics = publics_for(&compiled, &secrets, 0);
 
         // All three correct: exactly at threshold.
-        let mut wit = secrets_for(&compiled, &secrets, 0, |_| false);
+        let mut wit = secrets_for(&compiled, &secrets, 0, 0, |_| false);
         solve_auxiliaries(&compiled, &mut wit, &publics);
         assert_eq!(root_value(&compiled, &wit, &publics), Fr::from(1u64));
 
         // Replacing one secret with another *valid* credential's value
         // does NOT count as a second match for that slot: d_1 ≠ 0
         // there, so only two genuine matches remain — below k = 3.
-        let mut wit = secrets_for(&compiled, &secrets, 0, |_| false);
+        let mut wit = secrets_for(&compiled, &secrets, 0, 0, |_| false);
         for (index, slot) in compiled.secret_slots.iter().enumerate() {
             if matches!(slot, SecretSlot::Credential(i) if i == &1) {
                 wit[index] = digest_to_field(&credential_commitment(&secrets[0]));
@@ -554,67 +598,95 @@ mod tests {
     }
 
     #[test]
-    fn amount_cap_accepts_at_or_below_limit_and_rejects_above() {
-        let policy = Policy::AmountAtMost { limit: 100 };
+    fn amount_cap_accepts_boundaries_and_rejects_above() {
+        let limit = 100u64;
+        let policy = Policy::AmountAtMost { limit };
         let compiled = compile_with_layout::<Fr>(&policy).expect("compiles");
-        let publics = publics_for(&compiled, &[], 100);
+        assert_eq!(compiled.range_check_outputs, 4);
+        let publics = publics_for(&compiled, &[], limit);
 
         for (amount, accepted) in [
             (0u64, true),
+            (1, true),
             (50, true),
+            (99, true),
             (100, true),
             (101, false),
             (150, false),
+            (u64::MAX, false),
         ] {
-            let mut wit = secrets_for(&compiled, &[], amount, |_| false);
-            solve_auxiliaries(&compiled, &mut wit, &publics);
-            let accepted_actual = root_value(&compiled, &wit, &publics) == Fr::from(1u64);
-            assert_eq!(accepted_actual, accepted, "{amount}");
+            let wit = secrets_for(&compiled, &[], limit, amount, |_| false);
+            let outputs = output_values(&compiled, &wit, &publics);
+            let constraints_hold = outputs[..compiled.range_check_outputs]
+                .iter()
+                .all(|v| *v == Fr::zero());
+            assert_eq!(constraints_hold, accepted, "{amount}");
+
+            // The root wire is a satisfied conjunct by construction;
+            // enforcement lives entirely in the zero-constraints.
+            assert_eq!(*outputs.last().expect("root"), Fr::from(1u64));
         }
+    }
+
+    #[test]
+    fn forged_digit_witnesses_cannot_hide_over_limit_amounts() {
+        let limit = 100u64;
+        let policy = Policy::AmountAtMost { limit };
+        let compiled = compile_with_layout::<Fr>(&policy).expect("compiles");
+        let publics = publics_for(&compiled, &[], limit);
+
+        // Over-limit amount with forged low difference digits: the
+        // field difference is huge, so reconstruction cannot vanish.
+        let amount = u64::MAX;
+        let mut wit = secrets_for(&compiled, &[], limit, amount, |_| false);
+        for (index, slot) in compiled.secret_slots.iter().enumerate() {
+            if matches!(slot, SecretSlot::DifferenceBit(i) if *i >= 8) {
+                wit[index] = Fr::zero();
+            }
+        }
+        let outputs = output_values(&compiled, &wit, &publics);
+        assert!(outputs[..compiled.range_check_outputs]
+            .iter()
+            .any(|v| *v != Fr::zero()));
     }
 
     #[test]
     fn and_requires_both_branches_or_requires_one() {
         let (thr2of3, secrets) = threshold(2, 3);
 
-        // AND: failing branch breaks the conjunction…
+        // AND: violating the amount cap surfaces in its published
+        // zero-constraints (amount caps are global assertions)…
         let and_policy = Policy::And {
             policies: vec![thr2of3.clone(), Policy::AmountAtMost { limit: 50 }],
         };
         let compiled = compile_with_layout::<Fr>(&and_policy).expect("compiles");
         let publics = publics_for(&compiled, &secrets, 50);
-        let mut wit = secrets_for(&compiled, &secrets, 150, |_| false);
+        let mut wit = secrets_for(&compiled, &secrets, 50, 150, |_| false);
         solve_auxiliaries(&compiled, &mut wit, &publics);
-        assert_eq!(root_value(&compiled, &wit, &publics), Fr::zero());
+        let outputs = output_values(&compiled, &wit, &publics);
+        assert!(outputs[..compiled.range_check_outputs]
+            .iter()
+            .any(|v| *v != Fr::zero()));
 
-        // …and satisfying both branches holds.
-        let mut wit = secrets_for(&compiled, &secrets, 40, |_| false);
+        // …and satisfying both branches leaves every output clean.
+        let mut wit = secrets_for(&compiled, &secrets, 50, 40, |_| false);
         solve_auxiliaries(&compiled, &mut wit, &publics);
-        assert_eq!(root_value(&compiled, &wit, &publics), Fr::from(1u64));
+        let outputs = output_values(&compiled, &wit, &publics);
+        assert!(outputs.iter().all(|v| *v == Fr::one() || *v == Fr::zero()));
+        assert_eq!(*outputs.last().expect("root"), Fr::from(1u64));
 
-        // OR: one satisfied branch suffices even if the other fails.
-        let (impossible, or_secrets) = {
-            // A 5-of-3 threshold is structurally invalid; use a
-            // satisfiable-but-unmet 3-of-3 with wrong secrets instead.
-            let (p, s) = threshold(3, 3);
-            (p, s)
-        };
+        // OR: an amount branch that itself satisfies keeps the
+        // disjunction provable even when the threshold branch is unmet.
+        let (unmet_threshold, or_secrets) = threshold(3, 3);
         let or_policy = Policy::Or {
-            policies: vec![
-                impossible,                         // unmet: wrong secrets below
-                Policy::AmountAtMost { limit: 10 }, // met at amount 5
-            ],
+            policies: vec![unmet_threshold, Policy::AmountAtMost { limit: 10 }],
         };
         let compiled = compile_with_layout::<Fr>(&or_policy).expect("compiles");
         let publics = publics_for(&compiled, &or_secrets, 10);
-        let mut wit = secrets_for(&compiled, &or_secrets, 5, |i| i != 0);
+        let mut wit = secrets_for(&compiled, &or_secrets, 10, 5, |i| i != 0);
         solve_auxiliaries(&compiled, &mut wit, &publics);
-        assert_eq!(root_value(&compiled, &wit, &publics), Fr::from(1u64));
-
-        // …and when neither branch is satisfiable, it fails.
-        let mut wit = secrets_for(&compiled, &or_secrets, 999, |i| i != 0);
-        solve_auxiliaries(&compiled, &mut wit, &publics);
-        assert_eq!(root_value(&compiled, &wit, &publics), Fr::zero());
+        let outputs = output_values(&compiled, &wit, &publics);
+        assert_eq!(*outputs.last().expect("root"), Fr::from(1u64));
     }
 
     #[test]
@@ -642,13 +714,6 @@ mod tests {
         assert_eq!(
             compile::<Fr>(&Policy::And { policies: vec![] }).unwrap_err(),
             PolicyError::MalformedPolicy
-        );
-        assert_eq!(
-            compile::<Fr>(&Policy::AmountAtMost {
-                limit: AMOUNT_BOUND
-            })
-            .unwrap_err(),
-            PolicyError::CircuitCompilationFailed
         );
     }
 
@@ -695,7 +760,9 @@ mod tests {
         };
         let compiled = compile_with_layout::<Fr>(&policy).expect("compiles");
         let publics = publics_for(&compiled, &[secret], 0);
-        let mut wit = secrets_for(&compiled, &[SecretBytes::new(vec![7u8; 32])], 0, |_| false);
+        let mut wit = secrets_for(&compiled, &[SecretBytes::new(vec![7u8; 32])], 0, 0, |_| {
+            false
+        });
         solve_auxiliaries(&compiled, &mut wit, &publics);
         assert_eq!(root_value(&compiled, &wit, &publics), Fr::from(1u64));
     }

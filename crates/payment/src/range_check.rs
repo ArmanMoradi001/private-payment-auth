@@ -8,9 +8,7 @@
 
 use ark_ed25519::Fr;
 use circuit::{evaluate_reference, CircuitBuilder};
-use policy::range_check::{
-    prove_bounded_difference, RangeCheckBits, AMOUNT_BIT_LEN,
-};
+use policy::range_check::{prove_bounded_difference, RangeCheckBits, AMOUNT_BIT_LEN};
 
 /// Why a plaintext range check can fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,9 +67,8 @@ pub fn circuit_range_check_outputs(value: u64, limit: u64) -> [Fr; 4] {
     let amount = builder.secret_input();
     let limit_node = builder.constant(Fr::from(limit));
     let bits = RangeCheckBits::declare(&mut builder);
-    let outputs =
-        prove_bounded_difference::<Fr>(&mut builder, amount, limit_node, &bits)
-            .expect("gadget wires validly");
+    let outputs = prove_bounded_difference::<Fr>(&mut builder, amount, limit_node, &bits)
+        .expect("gadget wires validly");
     let circuit = builder.build().expect("range-check circuit validates");
 
     let mut secrets = Vec::with_capacity(1 + 2 * AMOUNT_BIT_LEN);
