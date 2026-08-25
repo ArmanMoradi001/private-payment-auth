@@ -6,6 +6,13 @@ license = "MIT OR Apache-2.0"
 description = "Cryptographic payment authorization project - payment authorization logic"
 
 [dependencies]
-proof = { path = "../proof", version = "0.1.0" }
-policy = { path = "../policy", version = "0.1.0" }
+ark-ed25519 = "0.4"
+ark-ff = "0.4"
+circuit = { path = "../circuit", version = "0.1.0" }
 crypto-core = { path = "../crypto-core", version = "0.1.0" }
+mpc = { path = "../mpc", version = "0.1.0" }
+policy = { path = "../policy", version = "0.1.0" }
+proof = { path = "../proof", version = "0.1.0" }
+
+[dev-dependencies]
+rand_chacha = "0.3"
