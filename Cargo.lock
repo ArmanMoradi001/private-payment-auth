@@ -693,11 +693,13 @@ dependencies = [
  "circuit",
  "criterion",
  "crypto-core",
+ "digest",
  "mpc",
  "mpcith",
  "proptest",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "sha3",
 ]
 
 [[package]]
