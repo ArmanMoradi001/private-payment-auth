@@ -25,3 +25,7 @@ serde_json = "1"
 [[bench]]
 name = "proof_bench"
 harness = false
+
+[[bench]]
+name = "backend_comparison_bench"
+harness = false

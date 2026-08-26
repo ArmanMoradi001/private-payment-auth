@@ -1,13 +1,13 @@
 # Architecture Overview
 
-> **Status: Phase 8 — safe amount binding and the payment domain.**
-> The primitives, additive MPC, arithmetic-circuit, MPC-in-the-Head,
-> Fiat–Shamir, `policy`, and `payment` layers are implemented.
-> Phase 8 replaces the provisional field-based amount constraint with
-> a sound dual bit-decomposition range check and adds the explicit
-> payment domain (`Amount`, `Payment`, bound `PaymentStatement` with
-> replay nonces). The `verifier` and `sdk` crates remain *intended*
-> architecture only.
+> **Status: Phase 9 — post-quantum-ready cryptographic backend abstraction.**
+> All prior layers are implemented. Phase 9 introduces a `CryptoBackend`
+> trait behind `crypto-core` with two implementations — `Sha256Backend`
+> (the default, byte-compatible with the historical SHA-256 paths) and
+> `Shake256Backend` (a SHA-3 XOF) — and binds every proof and Fiat–Shamir
+> derivation to a single backend via a `BackendId`. SHA-256 remains the
+> default; the abstraction only *adds* backend choice. The `verifier` and
+> `sdk` crates remain *intended* architecture only.
 
 ## Purpose
 
@@ -271,6 +271,51 @@ Implemented in the `payment` crate over `policy`, `proof`,
 Remaining known limitation: credential binding inside circuits still
 uses commitment-digest equality as a placeholder for in-circuit
 hashing (see the threat model).
+
+## `crypto-core` Backend Abstraction (Phase 9)
+
+The hard constraint for this phase was *non-displacement*: SHA-256 stays
+the default and every existing SHA-256 test vector remains byte-identical.
+The abstraction therefore adds a selectable backend without altering the
+default bytes.
+
+- **`CryptoBackend` trait** — `hash(data)`, `hash_domain(domain, data)`,
+  `expand(domain, data, out_len)` (XOF-like), `commit(message,
+  randomness)` (legacy-compatible framing), `const ID: BackendId`,
+  `const DIGEST_LEN: usize`, plus `GenericDigest<B>` carrying the
+  backend tag.
+- **`BackendId`** — a 16-byte opaque tag (`sha256-v1…` / `shake256-v1…`)
+  written into every serialized proof and read by the Fiat–Shamir
+  derivation, so a proof can never verify under a different backend.
+- **`Sha256Backend`** — `hash` equals the historical `Sha256Hash::hash`
+  exactly; `commit` reproduces the legacy `canonical(randomness) ‖
+  len(message) ‖ message` framing; `expand` is iterative SHA-256. Default
+  for every generic parameter (`Prover`, `Verifier`, `MpcithProver`,
+  `MpcithVerifier`, `ProtocolConfig`).
+- **`Shake256Backend`** — native SHAKE256 XOF for `expand`; 32-byte
+  digests for protocol compatibility. Produces *different* digests than
+  SHA-256 on identical input, which is exactly what makes backend binding
+  meaningful.
+- **`ProtocolConfig<B>`** — repetitions count plus the backend marker;
+  constructed per proof so the prover, the FS derivation, and the view
+  commitments all share one `B`.
+- **Binding in proofs** — `NonInteractiveProof` carries `backend_id`;
+  `Verifier::<B>::verify` rejects any proof whose `backend_id ≠ B::ID`
+  with `UnsupportedBackend` *before* doing any cryptographic work, which
+  defeats both cross-backend acceptance and post-hoc relabeling.
+- **Binding in Fiat–Shamir** — `fs_input` prepends `DOMAIN_FS ‖ B::ID ‖
+  PROTOCOL_VERSION` before the statement/transcript, so the challenge
+  space is backend-specific.
+
+All backends are exercised by `crypto-core/tests/backend_tests.rs`,
+`crypto-core/tests/fuzz_ready_tests.rs`, and
+`proof/tests/adversarial_backend_tests.rs`; the SHAKE256 path is
+validated against independent Python vectors in `tests/shake256_vectors.rs`
+and `crates/proof/tests/vectors/`.
+
+See ADR [0010](../decisions/0010-crypto-backend.md) for the design
+rationale, and [cryptographic-assumptions.md](security/cryptographic-assumptions.md)
+for what backend agility does and does *not* guarantee.
 
 ## Key Invariants
 

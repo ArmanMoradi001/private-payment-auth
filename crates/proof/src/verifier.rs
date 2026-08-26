@@ -8,7 +8,7 @@
 
 use circuit::Circuit;
 use core::marker::PhantomData;
-use crypto_core::backend::{CryptoBackend, Sha256Backend, Shake256Backend};
+use crypto_core::backend::{CryptoBackend, Sha256Backend};
 
 use mpcith::{FieldElement, MpcithVerifier, VerificationResult as InnerResult};
 
@@ -52,14 +52,19 @@ impl<B: CryptoBackend> Verifier<B> {
         Self::default()
     }
 
-    /// Verifies a proof end-to-end. The cryptographic backend is taken
-    /// from the proof's bound [`crypto_core::BackendId`], not from this
-    /// verifier's type parameter.
+    /// Verifies a proof end-to-end using the verifier's pinned backend `B`.
+    ///
+    /// The proof is cryptographically bound to a single backend via its
+    /// [`crypto_core::BackendId`]. A proof whose `backend_id` does not equal
+    /// `B::ID` is unconditionally rejected with [`ProofError::UnsupportedBackend`]
+    /// — this is what prevents a proof produced under one backend from being
+    /// accepted under another (and blocks relabeling attacks).
     ///
     /// # Errors
     ///
+    /// - [`ProofError::UnsupportedBackend`] when the proof's backend id does
+    ///   not match this verifier's backend `B`.
     /// - [`ProofError::InvalidVersion`] for unknown version/protocol ids.
-    /// - [`ProofError::UnsupportedBackend`] for an unknown backend id.
     /// - [`ProofError::CircuitIdMismatch`] / `InvalidCircuit` when the
     ///   circuit does not match the statement.
     /// - [`ProofError::ChallengeMismatch`] when a stored challenge
@@ -73,14 +78,10 @@ impl<B: CryptoBackend> Verifier<B> {
         statement: &Statement,
         proof: &NonInteractiveProof,
     ) -> Result<VerificationResult, ProofError> {
-        let backend_id = proof.backend_id();
-        if backend_id == Sha256Backend::ID {
-            self.verify_with::<Sha256Backend>(circuit, statement, proof)
-        } else if backend_id == Shake256Backend::ID {
-            self.verify_with::<Shake256Backend>(circuit, statement, proof)
-        } else {
-            Err(ProofError::UnsupportedBackend)
+        if proof.backend_id() != B::ID {
+            return Err(ProofError::UnsupportedBackend);
         }
+        self.verify_with::<B>(circuit, statement, proof)
     }
 
     fn verify_with<BB: CryptoBackend>(

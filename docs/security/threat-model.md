@@ -1,8 +1,11 @@
 # Threat Model (Skeleton)
 
-> **Status: initial skeleton — Phase 0.** No cryptographic implementation
-> exists yet. Assumptions and goals below are placeholders to be refined
-> before and during implementation. Nothing here is a final claim.
+> **Status: Phase 9 — cryptographic backend abstraction added.** The
+> `crypto-core` `CryptoBackend` trait now exposes `Sha256Backend` and
+> `Shake256Backend`, and proofs are bound to a single backend via
+> `BackendId`. SHA-256 remains the default and existing SHA-256 vectors are
+> unchanged. See the new backend section at the end of this document and ADR
+> [0010](../decisions/0010-crypto-backend.md).
 
 ## Assets
 
@@ -287,3 +290,57 @@ evidence. Security-relevant properties:
 - **No replay protection across statements**: the same proof verifies
   forever against the same statement; freshness binding belongs to the
   future policy/verifier layers.
+
+## Cryptographic Backend Abstraction: Assumptions and Limitations (Phase 9)
+
+Phase 9 introduces `CryptoBackend` with `Sha256Backend` (default) and
+`Shake256Backend` (SHA-3 XOF). It does **not** replace SHA-256; it makes
+the hash/XOF layer pluggable and binds each proof to the backend that
+produced it.
+
+### What is provided
+
+- **Non-displacement of SHA-256**: `Sha256Backend::hash` equals the
+  historical `Sha256Hash::hash` byte-for-byte, and `commit` keeps the
+  legacy framing. Every pre-Phase-9 SHA-256 test vector remains valid; the
+  default protocol bytes are unchanged.
+- **Backend-bound proofs**: `NonInteractiveProof` carries a `BackendId`;
+  `Verifier::<B>::verify` rejects any proof with `backend_id ≠ B::ID`
+  via `UnsupportedBackend` before performing any cryptographic work. This
+  defeats both cross-backend acceptance and post-hoc relabeling of a
+  proof's backend.
+- **Backend-bound Fiat–Shamir**: `fs_input` includes `B::ID`, so
+  challenges are backend-specific; a proof's challenges cannot be
+  recomputed under a different backend.
+- **Distinct digests across backends**: for identical input, SHA-256 and
+  SHAKE256 produce different digests, which is what makes the binding
+  meaningful rather than cosmetic.
+
+### Limitations — explicitly NOT provided
+
+1. **Backend agility is not, by itself, post-quantum security.** Only the
+   hash/XOF layer is swapped. The MPC-in-the-Head soundness, field
+   arithmetic, and commitment *framing* still rely on the same
+   assumptions as before. `Shake256Backend` is a SHA-3 primitive whose
+   collision/resistance is believed to resist known quantum attacks, but
+   deploying it as a real PQ upgrade requires re-deriving the full
+   protocol's concrete security under the QROM — out of scope for this
+   phase. See [cryptographic-assumptions.md](cryptographic-assumptions.md).
+2. **No hybrid / hedged construction.** There is exactly one backend per
+   proof; there is no parallel dual-hash composition. A single backend
+   compromise (e.g., a future break of SHA-256) would affect all
+   SHA-256 proofs. A production deployment that needs PQ hedging should
+   issue *two* proofs (SHA-256 + SHAKE256) and require both, which the
+   abstraction now makes straightforward but does not do automatically.
+3. **Verifier backend choice is a configuration decision.** A verifier
+   pinned to `Sha256Backend` will not accept `Shake256Backend` proofs and
+   vice versa. Systems that must accept both must explicitly try each
+   configured backend; nothing auto-negotiates.
+4. **Shared code paths.** `commit` framing, domain separators, and the FS
+   transcript structure are identical across backends; only the underlying
+   compression/XOF differs. Backend-specific implementation bugs (e.g., in
+   `expand`) affect whichever backend uses them, but a bug in shared logic
+   affects all backends.
+5. **Repetition count and FS security model unchanged.** Switching backend
+   does not change the forgery probability `(1/3)^R` or the ROM/QROM
+   assumptions of the Fiat–Shamir transformation.
