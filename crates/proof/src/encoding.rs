@@ -16,6 +16,9 @@
 //! wrong versions, truncation, malformed views, and trailing bytes.
 //! `deserialize(serialize(proof))` reproduces identical bytes.
 
+use crypto_core::backend::{
+    BackendId, CryptoBackend, Sha256Backend, Shake256Backend, BACKEND_ID_LEN,
+};
 use crypto_core::Digest;
 use mpcith::FieldElement;
 
@@ -24,15 +27,20 @@ use crate::proof::{NonInteractiveProof, ProofRepetition};
 use crate::statement::Statement;
 
 /// Proof-encoding version.
-pub const ENCODING_VERSION: u8 = 1;
+pub const ENCODING_VERSION: u8 = 2;
 /// Protocol id bound into encodings.
 pub const PROTOCOL_ID: u8 = 1;
+
+/// Backend ids explicitly supported by this decoder. Unknown ids are
+/// rejected outright (never silently defaulted to SHA-256).
+pub const SUPPORTED_BACKEND_IDS: &[BackendId] = &[Sha256Backend::ID, Shake256Backend::ID];
 
 /// Serializes a proof into its canonical byte representation.
 pub fn serialize_proof(proof: &NonInteractiveProof) -> Vec<u8> {
     let mut out = Vec::new();
     out.push(proof.version());
     out.push(proof.protocol_id());
+    out.extend_from_slice(proof.backend_id().as_bytes());
     proof.statement().encode_into(&mut out);
 
     let reps = proof.repetitions();
@@ -84,6 +92,15 @@ pub fn deserialize_proof(bytes: &[u8]) -> Result<NonInteractiveProof, ProofError
     if protocol_id != PROTOCOL_ID {
         return Err(ProofError::InvalidVersion);
     }
+    let backend_id_raw = c.read_bytes(BACKEND_ID_LEN)?;
+    let backend_id = BackendId::new(
+        <[u8; BACKEND_ID_LEN]>::try_from(backend_id_raw)
+            .map_err(|_| ProofError::MalformedEncoding)?,
+    );
+    // Reject unknown backends: do NOT silently default to SHA-256.
+    if !SUPPORTED_BACKEND_IDS.contains(&backend_id) {
+        return Err(ProofError::UnsupportedBackend);
+    }
 
     // The statement has its own self-delimiting decoder; feed it the
     // remainder and resume after it.
@@ -102,6 +119,7 @@ pub fn deserialize_proof(bytes: &[u8]) -> Result<NonInteractiveProof, ProofError
     Ok(NonInteractiveProof::new(
         version,
         protocol_id,
+        backend_id,
         statement,
         repetitions,
     ))

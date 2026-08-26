@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod config;
 pub mod encoding;
 pub mod error;
 pub mod fiat_shamir;
@@ -17,8 +18,10 @@ pub mod statement;
 pub mod verifier;
 
 /// Protocol version stamped into every proof and FS derivation.
-pub const PROTOCOL_VERSION: u8 = 1;
+/// Bumped to 2 to reflect backend binding.
+pub const PROTOCOL_VERSION: u8 = 2;
 
+pub use config::ProtocolConfig;
 pub use encoding::{deserialize_proof, serialize_proof, ENCODING_VERSION, PROTOCOL_ID};
 pub use error::ProofError;
 pub use fiat_shamir::{ChallengeGenerator, FiatShamirChallengeGenerator, FsSession, FS_DOMAIN};

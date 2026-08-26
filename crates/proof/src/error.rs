@@ -23,6 +23,8 @@ pub enum ProofError {
     CircuitIdMismatch,
     /// The proven outputs disagree with the statement.
     OutputMismatch,
+    /// The proof's backend id is unknown/unsupported.
+    UnsupportedBackend,
 }
 
 impl fmt::Display for ProofError {
@@ -37,6 +39,7 @@ impl fmt::Display for ProofError {
             Self::InvalidVersion => "invalid version",
             Self::CircuitIdMismatch => "circuit id mismatch",
             Self::OutputMismatch => "output mismatch",
+            Self::UnsupportedBackend => "unsupported cryptographic backend",
         };
         f.write_str(msg)
     }

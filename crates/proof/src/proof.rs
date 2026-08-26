@@ -5,13 +5,14 @@
 //! can mutate a proof in place. Every repetition stores the challenge
 //! for convenience/auditability, but verifiers must recompute it.
 
+use crypto_core::backend::BackendId;
 use crypto_core::{Digest, HashFunction, SecretBytes, Sha256Hash};
 use mpcith::{Challenge, FieldElement, PartyView, ViewCommitment};
 
 use crate::statement::Statement;
 
 /// Domain for proof identity hashing.
-pub const PROOF_ID_DOMAIN: &[u8] = b"private-payment-auth/proof/id/v1";
+pub const PROOF_ID_DOMAIN: &[u8] = b"private-payment-auth/proof/id/v2";
 
 /// One Fiat–Shamir repetition inside a [`NonInteractiveProof`].
 #[derive(Clone, Debug)]
@@ -82,6 +83,7 @@ impl ProofRepetition {
 pub struct NonInteractiveProof {
     version: u8,
     protocol_id: u8,
+    backend_id: BackendId,
     statement: Statement,
     repetitions: Vec<ProofRepetition>,
 }
@@ -92,12 +94,14 @@ impl NonInteractiveProof {
     pub fn new(
         version: u8,
         protocol_id: u8,
+        backend_id: BackendId,
         statement: Statement,
         repetitions: Vec<ProofRepetition>,
     ) -> Self {
         Self {
             version,
             protocol_id,
+            backend_id,
             statement,
             repetitions,
         }
@@ -111,6 +115,11 @@ impl NonInteractiveProof {
     /// Protocol identifier (reserved; currently always 1).
     pub fn protocol_id(&self) -> u8 {
         self.protocol_id
+    }
+
+    /// The cryptographic backend used to produce this proof.
+    pub fn backend_id(&self) -> BackendId {
+        self.backend_id
     }
 
     /// The statement this proof attests.

@@ -6,7 +6,8 @@ use circuit::CircuitBuilder;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mpc::PublicValue;
 use proof::{
-    ChallengeGenerator as _, FiatShamirChallengeGenerator, FsSession, Prover, Statement, Verifier,
+    ChallengeGenerator as _, FiatShamirChallengeGenerator, FsSession, ProtocolConfig, Prover,
+    Statement, Verifier,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
@@ -46,7 +47,7 @@ fn fixture(size: usize) -> (circuit::Circuit<Fr>, Statement, Vec<Fr>) {
 
 fn bench_fs_derivation(c: &mut Criterion) {
     let mut group = c.benchmark_group("proof/fs_derivation");
-    let gen = FiatShamirChallengeGenerator;
+    let gen = FiatShamirChallengeGenerator::<crypto_core::Sha256Backend>::default();
     for (size, reps) in [(10usize, 10u32), (100, 10), (1000, 10)] {
         // Cost scales with the joint transcript: `reps` sessions of 3
         // commitments each, over a statement bound to the given circuit.
@@ -102,6 +103,7 @@ fn bench_prove(c: &mut Criterion) {
                             &statement,
                             witness.clone(),
                             ChaCha20Rng::seed_from_u64(1),
+                            ProtocolConfig::<crypto_core::Sha256Backend>::default(),
                         )
                         .expect("valid");
                         prover.prove(reps).expect("valid")
@@ -121,8 +123,14 @@ fn bench_verify(c: &mut Criterion) {
                 continue;
             }
             let (circuit, statement, witness) = fixture(size);
-            let mut prover =
-                Prover::new(&circuit, &statement, witness, ChaCha20Rng::seed_from_u64(2)).unwrap();
+            let mut prover = Prover::new(
+                &circuit,
+                &statement,
+                witness,
+                ChaCha20Rng::seed_from_u64(2),
+                ProtocolConfig::<crypto_core::Sha256Backend>::default(),
+            )
+            .unwrap();
             let proof = prover.prove(reps).expect("valid");
 
             group.bench_with_input(
@@ -130,7 +138,7 @@ fn bench_verify(c: &mut Criterion) {
                 &proof,
                 |b, proof| {
                     b.iter(|| {
-                        Verifier::new()
+                        Verifier::<crypto_core::Sha256Backend>::new()
                             .verify(&circuit, &statement, std::hint::black_box(proof))
                             .expect("no error")
                     });
@@ -145,8 +153,14 @@ fn bench_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("proof/serialization");
     for size in [10usize, 100, 1000] {
         let (circuit, statement, witness) = fixture(size);
-        let mut prover =
-            Prover::new(&circuit, &statement, witness, ChaCha20Rng::seed_from_u64(3)).unwrap();
+        let mut prover = Prover::new(
+            &circuit,
+            &statement,
+            witness,
+            ChaCha20Rng::seed_from_u64(3),
+            ProtocolConfig::<crypto_core::Sha256Backend>::default(),
+        )
+        .unwrap();
         let proof = prover.prove(10).expect("valid");
 
         group.bench_with_input(BenchmarkId::from_parameter(size), &proof, |b, proof| {

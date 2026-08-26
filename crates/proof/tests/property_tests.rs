@@ -66,6 +66,7 @@ fn honest_proof(
         &statement,
         witness,
         ChaCha20Rng::seed_from_u64(seed),
+        proof::ProtocolConfig::<crypto_core::Sha256Backend>::default(),
     )
     .expect("valid");
     let prf = prover.prove(2).expect("valid");
@@ -125,7 +126,7 @@ proptest! {
         prop_assert_eq!(proof::serialize_proof(&decoded), bytes);
         prop_assert_eq!(decoded.proof_id().unwrap(), prf.proof_id().unwrap());
         prop_assert_eq!(
-            proof::Verifier::new()
+            proof::Verifier::<crypto_core::Sha256Backend>::new()
                 .verify(&circuit, &statement, &decoded)
                 .expect("no error"),
             proof::VerificationResult::Valid
@@ -152,7 +153,7 @@ proptest! {
             Err(_) => {}
             Ok(decoded) => {
                 let verdict =
-                    proof::Verifier::new().verify(&circuit, &statement, &decoded);
+                    proof::Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &statement, &decoded);
                 let valid = matches!(verdict, Ok(proof::VerificationResult::Valid));
                 if valid {
                     // Only tolerable inside never-opened commitments.
@@ -187,7 +188,13 @@ fn statement_shape_mismatch_is_rejected_before_proving() {
         expected_outputs: vec![PublicValue::new(Fr::from(52u64))],
     };
     assert!(matches!(
-        proof::Prover::new(&circuit, &bad, witness, ChaCha20Rng::seed_from_u64(1)),
+        proof::Prover::new(
+            &circuit,
+            &bad,
+            witness,
+            ChaCha20Rng::seed_from_u64(1),
+            proof::ProtocolConfig::<crypto_core::Sha256Backend>::default(),
+        ),
         Err(proof::ProofError::InvalidStatement)
     ));
 }

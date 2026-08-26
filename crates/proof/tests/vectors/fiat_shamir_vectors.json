@@ -30,12 +30,12 @@
         }
       ],
       "expected_digests": [
-        "516824bcefaa1267d67c2198c1bae3df4779a728b18017db04b7a7daaae2e7ba",
-        "3267f277369008491d2074b8fc5a4c1ab52529aaf69203040590f89df0fde8f4"
+        "0fe40a427d9eb33936f7df2f6470687bc30c0fbf613929b6d5bdff800aa243d0",
+        "665a7cb14964edd80738ef0f3d8c305c56a424789b87d0cde86d0785e6fdcb49"
       ],
       "expected_hidden_parties": [
-        0,
-        2
+        1,
+        0
       ]
     },
     {
@@ -67,12 +67,12 @@
         }
       ],
       "expected_digests": [
-        "688f1181f64e9a9d81a91094f14aae14e8fb686aeb5fe363839cb44cae886629",
-        "d13b39ad3d993270bad53f5e4e2018d484d5cbbfd877d5fea121bb5c023f2be8"
+        "83081c92755b6ddf97501ca7aef1f5a9050bf2db08371b510b6c32adafc24ecb",
+        "db4942b3a4d522d9a62bed1e50139d2f45a47114c2e2933558bd799bbd518ffe"
       ],
       "expected_hidden_parties": [
-        2,
-        2
+        1,
+        1
       ]
     },
     {
@@ -113,14 +113,14 @@
         }
       ],
       "expected_digests": [
-        "d85524ee8fa4c61232cbd0882dffeccce6705460eb8b0d29bbb6fbf58bdbb3b6",
-        "3430e884691f79c6c43aab44cd5d6376cff061bc07055c43e5896a4952ddf6ae",
-        "231a225183848ccc1c17b7bdbcee3b52220f26c969a14c53044c9861de35bb62"
+        "41e1f8a451aa075b093048146b30519b9454b5c000b7fe985bb9c2c9eb20a7be",
+        "9952455307af912e889ebe10cfb30c74153fec532de4d28c88188e0a1254d058",
+        "733cb46d767888f601d91f9ae37f78b06345f14a50c89110ccb199254ee92ad2"
       ],
       "expected_hidden_parties": [
-        0,
         1,
-        2
+        1,
+        1
       ]
     }
   ]

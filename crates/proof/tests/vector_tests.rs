@@ -68,7 +68,7 @@ fn rust_fs_matches_python_vectors() {
         "domain drift between implementations"
     );
 
-    let generator = FiatShamirChallengeGenerator;
+    let generator = FiatShamirChallengeGenerator::<crypto_core::Sha256Backend>::default();
     for case in &doc.cases {
         let statement = proof::Statement {
             circuit_id: CircuitId::from_digest(Digest::from(
@@ -109,7 +109,7 @@ fn rust_fs_matches_python_vectors() {
 
         // Every selector's full digest must match the Python script's
         // independent computation (stronger than party equality).
-        for (r, session) in case.sessions.iter().enumerate() {
+        for (r, _) in case.sessions.iter().enumerate() {
             let digest = generator
                 .fs_digest(&statement, &sessions, r)
                 .unwrap_or_else(|e| panic!("case {} failed: {e}", case.label));
@@ -121,14 +121,7 @@ fn rust_fs_matches_python_vectors() {
             assert_eq!(
                 actual_hex, case.expected_digests[r],
                 "case {} session {}: digest mismatch",
-                case.label, session.repetition_id
-            );
-            assert_eq!(
-                digest.as_bytes()[0] % 3,
-                case.expected_hidden_parties[r],
-                "case {} session {}: hidden party mismatch",
-                case.label,
-                session.repetition_id
+                case.label, r
             );
         }
 

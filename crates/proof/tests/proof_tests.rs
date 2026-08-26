@@ -7,8 +7,8 @@ use crypto_core::{Digest, HashFunction as _};
 use mpc::PublicValue;
 use mpcith::{FieldElement, PartyId, ViewCommitment};
 use proof::{
-    deserialize_proof, NonInteractiveProof, ProofError, ProofRepetition, Prover, Statement,
-    VerificationResult, Verifier,
+    deserialize_proof, NonInteractiveProof, ProofError, ProofRepetition, ProtocolConfig, Prover,
+    Statement, VerificationResult, Verifier,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
@@ -41,6 +41,7 @@ fn honest_proof(reps: u32) -> (circuit::Circuit<Fr>, Statement, NonInteractivePr
         &statement,
         witness,
         ChaCha20Rng::seed_from_u64(99),
+        ProtocolConfig::<crypto_core::Sha256Backend>::default(),
     )
     .unwrap();
     let proof = prover.prove(reps).expect("valid");
@@ -52,7 +53,7 @@ fn valid_proof_verifies() {
     for reps in [1u32, 2, 8] {
         let (circuit, statement, proof) = honest_proof(reps);
         assert_eq!(
-            Verifier::new()
+            Verifier::<crypto_core::Sha256Backend>::new()
                 .verify(&circuit, &statement, &proof)
                 .expect("no error"),
             VerificationResult::Valid,
@@ -64,7 +65,7 @@ fn valid_proof_verifies() {
 #[test]
 fn fs_challenge_mutations_change_derivation() {
     use proof::{ChallengeGenerator as _, FiatShamirChallengeGenerator, FsSession};
-    let gen = FiatShamirChallengeGenerator;
+    let gen = FiatShamirChallengeGenerator::<crypto_core::Sha256Backend>::default();
     let (_circuit, statement, _) = fixture();
     let (_, _, proof) = honest_proof(2);
 
@@ -158,7 +159,7 @@ fn modified_commitment_rejects() {
     });
 
     assert!(matches!(
-        Verifier::new().verify(&circuit, &statement, &rebuilt),
+        Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &statement, &rebuilt),
         Err(ProofError::ChallengeMismatch) | Err(ProofError::VerificationFailed)
     ));
 }
@@ -175,7 +176,7 @@ fn modified_hidden_party_commitment_cannot_be_smuggled_past_challenge_check() {
     // the divergence branch deterministically by searching seeds until
     // the recomputed challenge differs from the stored one.
     use proof::{ChallengeGenerator as _, FiatShamirChallengeGenerator, FsSession};
-    let gen = FiatShamirChallengeGenerator;
+    let gen = FiatShamirChallengeGenerator::<crypto_core::Sha256Backend>::default();
 
     for seed in 0..32u64 {
         let (circuit, statement, witness) = fixture();
@@ -184,6 +185,7 @@ fn modified_hidden_party_commitment_cannot_be_smuggled_past_challenge_check() {
             &statement,
             witness,
             ChaCha20Rng::seed_from_u64(seed),
+            ProtocolConfig::<crypto_core::Sha256Backend>::default(),
         )
         .unwrap();
         let proof = prover.prove(2).expect("valid");
@@ -215,7 +217,7 @@ fn modified_hidden_party_commitment_cannot_be_smuggled_past_challenge_check() {
         }
 
         assert_eq!(
-            Verifier::new().verify(&circuit, &statement, &rebuilt),
+            Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &statement, &rebuilt),
             Err(ProofError::ChallengeMismatch)
         );
         return;
@@ -240,7 +242,7 @@ fn modified_opened_view_rejects() {
         )
     });
     assert!(!matches!(
-        Verifier::new().verify(&circuit, &statement, &rebuilt),
+        Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &statement, &rebuilt),
         Ok(VerificationResult::Valid)
     ));
 }
@@ -262,7 +264,7 @@ fn modified_randomness_rejects() {
         )
     });
     assert!(matches!(
-        Verifier::new().verify(&circuit, &statement, &rebuilt),
+        Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &statement, &rebuilt),
         Err(ProofError::ChallengeMismatch) | Err(ProofError::VerificationFailed)
     ));
 }
@@ -284,10 +286,11 @@ fn removed_and_reordered_repetitions_reject() {
     let removed = NonInteractiveProof::new(
         proof.version(),
         proof.protocol_id(),
+        proof.backend_id(),
         statement.clone(),
         kept,
     );
-    assert!(Verifier::new()
+    assert!(Verifier::<crypto_core::Sha256Backend>::new()
         .verify(&circuit, &statement, &removed)
         .is_err());
 
@@ -296,10 +299,11 @@ fn removed_and_reordered_repetitions_reject() {
     let reordered = NonInteractiveProof::new(
         proof2.version(),
         proof2.protocol_id(),
+        proof2.backend_id(),
         statement.clone(),
         proof2.repetitions().iter().rev().cloned().collect(),
     );
-    assert!(Verifier::new()
+    assert!(Verifier::<crypto_core::Sha256Backend>::new()
         .verify(&circuit, &statement, &reordered)
         .is_err());
 }
@@ -325,7 +329,7 @@ fn canonical_serialization_round_trip_is_byte_exact() {
     let (circuit, statement2, _) = fixture();
     assert_eq!(statement, statement2);
     assert_eq!(
-        Verifier::new()
+        Verifier::<crypto_core::Sha256Backend>::new()
             .verify(&circuit, &statement, &decoded)
             .expect("no error"),
         VerificationResult::Valid
@@ -337,7 +341,7 @@ fn malformed_serialization_rejects() {
     let (circuit, _, proof) = honest_proof(2);
     let bytes = proof::serialize_proof(&proof);
     assert_eq!(
-        Verifier::new()
+        Verifier::<crypto_core::Sha256Backend>::new()
             .verify(
                 &circuit,
                 proof.statement(),
@@ -391,7 +395,7 @@ fn circuit_binding_holds() {
     let other_circuit = b.build().expect("valid");
 
     assert!(matches!(
-        Verifier::new().verify(&other_circuit, &statement, &proof),
+        Verifier::<crypto_core::Sha256Backend>::new().verify(&other_circuit, &statement, &proof),
         Err(ProofError::CircuitIdMismatch)
     ));
 }
@@ -402,7 +406,7 @@ fn statement_binding_holds() {
     let mut tampered = statement.clone();
     tampered.expected_outputs[0] = PublicValue::new(Fr::zero());
     assert_eq!(
-        Verifier::new().verify(&circuit, &tampered, &proof),
+        Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &tampered, &proof),
         Err(ProofError::InvalidStatement)
     );
 }
@@ -458,6 +462,7 @@ fn rebuild_with(
     NonInteractiveProof::new(
         proof.version(),
         proof.protocol_id(),
+        proof.backend_id(),
         proof.statement().clone(),
         repetitions,
     )

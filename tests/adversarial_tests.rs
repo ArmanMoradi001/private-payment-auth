@@ -119,7 +119,7 @@ fn forge_proof(views: &[PartyView], hidden: u8, hidden_output_share: Fr) -> Mpci
     let mut opened = Vec::new();
     for v in views {
         let r = SecretBytes::new(vec![7u8; 32]);
-        commitments.push(mpcith::commit_view(v, &r).expect("valid"));
+        commitments.push(mpcith::commit_view::<crypto_core::Sha256Backend>(v, &r).expect("valid"));
         if v.party_id.get() != hidden {
             opened.push(OpenedView {
                 view: v.clone(),

@@ -16,7 +16,7 @@ pub mod random;
 pub mod secret;
 
 pub use backend::{
-    BackendId, CryptoBackend, GenericDigest, Shake256Backend, Sha256Backend, BACKEND_ID_LEN,
+    BackendId, CryptoBackend, GenericDigest, Sha256Backend, Shake256Backend, BACKEND_ID_LEN,
     DOMAIN_CIRCUIT, DOMAIN_COMMIT, DOMAIN_FS, DOMAIN_HASH, DOMAIN_PAYMENT, DOMAIN_POLICY,
 };
 pub use commitment::{commit, open, Commitment, CommitmentRandomness, RANDOMNESS_LEN};

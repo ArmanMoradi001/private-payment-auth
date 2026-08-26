@@ -10,6 +10,7 @@
 //! Fiat–Shamir transform is deliberately deferred (ADR 0006).
 
 use ark_ff::{UniformRand, Zero};
+use crypto_core::backend::{CryptoBackend, Sha256Backend};
 use crypto_core::SecretBytes;
 use mpc::ShareContext;
 use rand_core::CryptoRngCore;
@@ -93,13 +94,14 @@ pub struct PartialRepetition {
 }
 
 /// Produces [`MpcithProof`]s for a fixed (circuit, statement, witness)
-/// triple.
-pub struct MpcithProver<'a, R: CryptoRngCore> {
+/// triple, parameterized by the cryptographic [`CryptoBackend`] `B`.
+pub struct MpcithProver<'a, R: CryptoRngCore, B: CryptoBackend = Sha256Backend> {
     circuit: &'a Circuit<FieldElement>,
     statement: &'a Statement,
     witness: Vec<FieldElement>,
     challenge_source: Box<dyn ChallengeSource>,
     rng: R,
+    _marker: core::marker::PhantomData<B>,
 }
 
 /// Value of one circuit node during the 3-party simulation: either a
@@ -133,8 +135,9 @@ struct PartyState {
     opened_values: Vec<FieldElement>,
 }
 
-impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
-    /// Creates a prover after checking statement/witness consistency.
+impl<'a, R: CryptoRngCore> MpcithProver<'a, R, Sha256Backend> {
+    /// Creates a prover using the default SHA-256 backend after checking
+    /// statement/witness consistency.
     ///
     /// # Errors
     ///
@@ -143,6 +146,27 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
     /// - [`MpcithError::InvalidStatement`] if the witness or public
     ///   input counts disagree with the circuit.
     pub fn new(
+        circuit: &'a Circuit<FieldElement>,
+        statement: &'a Statement,
+        witness: Vec<FieldElement>,
+        challenge_source: Box<dyn ChallengeSource>,
+        rng: R,
+    ) -> Result<Self, MpcithError> {
+        Self::new_backend(circuit, statement, witness, challenge_source, rng)
+    }
+}
+
+impl<'a, R: CryptoRngCore, B: CryptoBackend> MpcithProver<'a, R, B> {
+    /// Creates a prover for an explicit backend after checking
+    /// statement/witness consistency.
+    ///
+    /// # Errors
+    ///
+    /// - [`MpcithError::InvalidCircuit`] if the circuit fails
+    ///   validation or does not match the statement's id.
+    /// - [`MpcithError::InvalidStatement`] if the witness or public
+    ///   input counts disagree with the circuit.
+    pub fn new_backend(
         circuit: &'a Circuit<FieldElement>,
         statement: &'a Statement,
         witness: Vec<FieldElement>,
@@ -159,6 +183,7 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
             witness,
             challenge_source,
             rng,
+            _marker: core::marker::PhantomData,
         })
     }
 
@@ -480,7 +505,7 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
         for p in 0..3usize {
             let view = build_view(id, p, &parties)?;
             let r = self.fresh_randomness()?;
-            commitments.push(commit_view(&view, &r)?);
+            commitments.push(commit_view::<B>(&view, &r)?);
             randomness.push(r);
             views.push(view);
         }

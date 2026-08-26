@@ -44,6 +44,8 @@ pub const DOMAIN_CIRCUIT: &[u8] = b"private-payment-auth/circuit/v2";
 pub const DOMAIN_POLICY: &[u8] = b"private-payment-auth/policy/v2";
 /// Domain separator for payment hashing.
 pub const DOMAIN_PAYMENT: &[u8] = b"private-payment-auth/payment/v2";
+/// Domain separator for MPCitH view commitments.
+pub const DOMAIN_MPCITH_VIEW: &[u8] = b"private-payment-auth/mpcith/view/v2";
 
 /// Byte length of a canonical [`BackendId`] encoding.
 pub const BACKEND_ID_LEN: usize = 16;
@@ -206,8 +208,19 @@ pub trait CryptoBackend: Clone + Send + Sync + 'static {
     /// implemented by iterative hashing; for SHAKE256 it is a native XOF.
     fn expand(domain: &[u8], data: &[u8], out_len: usize) -> Vec<u8>;
 
-    /// Commitment: `H(domain || randomness || len(msg) || msg)`.
-    fn commit(domain: &[u8], msg: &[u8], randomness: &[u8]) -> GenericDigest<Self>;
+    /// Commitment: `H(canonical(randomness) || len(msg) || msg)`.
+    ///
+    /// The framing matches the historical SHA-256 commitment byte-for-byte so
+    /// existing test vectors stay identical; only the underlying `hash`
+    /// changes between backends.
+    fn commit(msg: &[u8], randomness: &[u8]) -> GenericDigest<Self> {
+        let mut input = Vec::with_capacity(4 + randomness.len() + 4 + msg.len());
+        randomness.encode(&mut input);
+        let msg_len = u32::try_from(msg.len()).expect("commitment message exceeds u32 length");
+        input.extend_from_slice(&msg_len.to_be_bytes());
+        input.extend_from_slice(msg);
+        Self::hash(&input)
+    }
 }
 
 /// Frames `domain || len(data) || data` for domain-separated hashing.
@@ -254,21 +267,6 @@ impl CryptoBackend for Sha256Backend {
         out.truncate(out_len);
         out
     }
-
-    fn commit(domain: &[u8], msg: &[u8], randomness: &[u8]) -> GenericDigest<Self> {
-        GenericDigest::new(sha256(&commit_frame(domain, msg, randomness)).to_vec())
-    }
-}
-
-fn commit_frame(domain: &[u8], msg: &[u8], randomness: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(
-        domain.len() + 4 + randomness.len() + 4 + msg.len(),
-    );
-    domain.encode(&mut out);
-    randomness.encode(&mut out);
-    out.extend_from_slice(&(msg.len() as u32).to_be_bytes());
-    out.extend_from_slice(msg);
-    out
 }
 
 /// SHAKE256 backend (a SHA-3 XOF).
@@ -296,10 +294,6 @@ impl CryptoBackend for Shake256Backend {
     fn expand(domain: &[u8], data: &[u8], out_len: usize) -> Vec<u8> {
         // Native XOF: SHAKE256(domain || len(data) || data, out_len).
         shake256(&frame(domain, data), out_len)
-    }
-
-    fn commit(domain: &[u8], msg: &[u8], randomness: &[u8]) -> GenericDigest<Self> {
-        GenericDigest::new(shake256(&commit_frame(domain, msg, randomness), 32))
     }
 }
 
@@ -381,13 +375,10 @@ mod tests {
     fn commitments_are_deterministic() {
         let msg = b"message";
         let r = b"randomness-bytes-are-32-bytes-lo";
-        let c1 = Sha256Backend::commit(DOMAIN_COMMIT, msg, r);
-        let c2 = Sha256Backend::commit(DOMAIN_COMMIT, msg, r);
+        let c1 = Sha256Backend::commit(msg, r);
+        let c2 = Sha256Backend::commit(msg, r);
         assert_eq!(c1, c2);
-        assert_ne!(
-            Sha256Backend::commit(DOMAIN_COMMIT, b"other", r),
-            c1
-        );
+        assert_ne!(Sha256Backend::commit(b"other", r), c1);
     }
 
     #[test]

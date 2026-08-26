@@ -13,8 +13,11 @@
 //! probability (1/3)^R.
 
 use ark_ff::Zero;
+use core::marker::PhantomData;
 
 use circuit::Circuit;
+
+use crypto_core::backend::{CryptoBackend, Sha256Backend};
 
 use crate::commitment::verify_commitment;
 use crate::error::MpcithError;
@@ -55,14 +58,33 @@ struct Replay {
     values: Vec<NodeVal>,
 }
 
-/// Verifies MPCitH proofs against statements and circuits.
-#[derive(Default)]
-pub struct MpcithVerifier;
+/// Verifies MPCitH proofs against statements and circuits, parameterized
+/// by the cryptographic [`CryptoBackend`] `B`.
+pub struct MpcithVerifier<B: CryptoBackend = Sha256Backend> {
+    _marker: PhantomData<B>,
+}
 
-impl MpcithVerifier {
-    /// Creates a verifier.
+impl MpcithVerifier<Sha256Backend> {
+    /// Creates a verifier using the default SHA-256 backend.
     pub fn new() -> Self {
-        Self
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl Default for MpcithVerifier<Sha256Backend> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<B: CryptoBackend> MpcithVerifier<B> {
+    /// Creates a verifier for an explicit backend.
+    pub fn new_backend() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
     }
 
     /// Verifies every repetition of `proof` against `statement`.
@@ -127,7 +149,7 @@ impl MpcithVerifier {
                 return Err(MpcithError::InconsistentView);
             }
             let committed = repetition.commitments[view.party_id.get() as usize];
-            if !verify_commitment(&committed, view, &opened.randomness)? {
+            if !verify_commitment::<B>(&committed, view, &opened.randomness)? {
                 return Err(MpcithError::CommitmentMismatch);
             }
         }

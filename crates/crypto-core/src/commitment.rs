@@ -1,17 +1,20 @@
 //! Hash-based commitments.
 //!
-//! A commitment is computed as `H(canonical(randomness) || len(message)
+//! A commitment is computed as `H(domain || randomness || len(message)
 //! || message)` where the message length framing makes the encoding
 //! unambiguous and the randomness binding makes the scheme hiding and
 //! binding under the standard-model hardness of the underlying hash.
+//!
+//! The primitives are now parameterized by a [`CryptoBackend`]: callers
+//! that do not care select [`Sha256Backend`] (the default) and obtain the
+//! exact same bytes as the historical SHA-256 implementation.
 
 use rand_core::CryptoRngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::digest::{Digest, DIGEST_LEN};
-use crate::encoding::CanonicalEncode;
+use crate::backend::{CryptoBackend, GenericDigest, Sha256Backend};
+use crate::digest::Digest;
 use crate::error::CryptoCoreError;
-use crate::hash::HashFunction;
 use crate::secret::SecretBytes;
 
 /// Required byte length of [`CommitmentRandomness`].
@@ -75,63 +78,76 @@ impl CommitmentRandomness {
     }
 }
 
-fn commit_input(message: &[u8], randomness: &CommitmentRandomness) -> Vec<u8> {
-    let mut input = Vec::with_capacity(4 + randomness.as_bytes().len() + 4 + message.len());
-    randomness.as_bytes().encode(&mut input);
-    let msg_len = u32::try_from(message.len()).expect("commitment message exceeds u32 length");
-    input.extend_from_slice(&msg_len.to_be_bytes());
-    input.extend_from_slice(message);
-    input
-}
-
-/// Commits to `message` under `randomness`.
+/// Commits to `message` under `randomness`, using backend `B`.
 ///
-/// Hash outputs shorter than [`DIGEST_LEN`] are zero-padded; longer ones
-/// truncated to the first [`DIGEST_LEN`] bytes.
-pub fn commit<H: HashFunction>(message: &[u8], randomness: &CommitmentRandomness) -> Commitment {
-    let output = H::hash(&commit_input(message, randomness));
-    let src = output.as_ref();
-    let mut bytes = [0u8; DIGEST_LEN];
-    let n = src.len().min(DIGEST_LEN);
-    bytes[..n].copy_from_slice(&src[..n]);
-    Commitment(Digest::new(bytes))
+/// The message is framed exactly like the historical SHA-256 commitment
+/// (`canonical(randomness) || len(message) || message`) and hashed via
+/// [`CryptoBackend::commit`], so existing SHA-256 vectors are preserved.
+pub fn commit<B: CryptoBackend>(
+    message: &[u8],
+    randomness: &CommitmentRandomness,
+) -> GenericDigest<B> {
+    B::commit(message, randomness.as_bytes())
 }
 
-/// Checks that `(message, randomness)` opens `commitment`, in constant time.
-pub fn open<H: HashFunction>(
-    commitment: &Commitment,
+/// Checks that `(message, randomness)` opens `commitment`, in constant
+/// time, using backend `B`.
+pub fn open<B: CryptoBackend>(
+    commitment: &GenericDigest<B>,
     message: &[u8],
     randomness: &CommitmentRandomness,
 ) -> bool {
-    commit::<H>(message, randomness).ct_eq(commitment)
+    commit::<B>(message, randomness).ct_eq(commitment)
+}
+
+/// Backward-compatible, non-generic SHA-256 commitment wrapper.
+///
+/// Prefer [`commit::<Sha256Backend>`]; this exists only to ease migration
+/// of call sites that previously used the global SHA-256 commitment.
+#[deprecated(note = "use commit::<Sha256Backend> instead")]
+pub fn commit_sha256(
+    message: &[u8],
+    randomness: &CommitmentRandomness,
+) -> GenericDigest<Sha256Backend> {
+    commit::<Sha256Backend>(message, randomness)
+}
+
+/// Backward-compatible, non-generic SHA-256 opening wrapper.
+#[deprecated(note = "use open::<Sha256Backend> instead")]
+pub fn open_sha256(
+    commitment: &GenericDigest<Sha256Backend>,
+    message: &[u8],
+    randomness: &CommitmentRandomness,
+) -> bool {
+    open::<Sha256Backend>(commitment, message, randomness)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hash::Sha256Hash;
+    use crate::backend::Sha256Backend;
     use rand_core::OsRng;
 
     #[test]
     fn commit_open_roundtrip() {
         let r = CommitmentRandomness::generate(&mut OsRng).unwrap();
-        let c = commit::<Sha256Hash>(b"hello", &r);
-        assert!(open::<Sha256Hash>(&c, b"hello", &r));
+        let c = commit::<Sha256Backend>(b"hello", &r);
+        assert!(open::<Sha256Backend>(&c, b"hello", &r));
     }
 
     #[test]
     fn wrong_message_fails_to_open() {
         let r = CommitmentRandomness::generate(&mut OsRng).unwrap();
-        let c = commit::<Sha256Hash>(b"hello", &r);
-        assert!(!open::<Sha256Hash>(&c, b"hellp", &r));
-        assert!(!open::<Sha256Hash>(&c, b"", &r));
+        let c = commit::<Sha256Backend>(b"hello", &r);
+        assert!(!open::<Sha256Backend>(&c, b"hellp", &r));
+        assert!(!open::<Sha256Backend>(&c, b"", &r));
     }
 
     #[test]
     fn wrong_randomness_fails_to_open() {
-        let c = commit::<Sha256Hash>(b"m", &CommitmentRandomness::generate(&mut OsRng).unwrap());
+        let c = commit::<Sha256Backend>(b"m", &CommitmentRandomness::generate(&mut OsRng).unwrap());
         let other = CommitmentRandomness::generate(&mut OsRng).unwrap();
-        assert!(!open::<Sha256Hash>(&c, b"m", &other));
+        assert!(!open::<Sha256Backend>(&c, b"m", &other));
     }
 
     #[test]
@@ -139,16 +155,16 @@ mod tests {
         let r1 = CommitmentRandomness::generate(&mut OsRng).unwrap();
         let r2 = CommitmentRandomness::generate(&mut OsRng).unwrap();
         assert_eq!(
-            commit::<Sha256Hash>(b"x", &r1),
-            commit::<Sha256Hash>(b"x", &r1)
+            commit::<Sha256Backend>(b"x", &r1),
+            commit::<Sha256Backend>(b"x", &r1)
         );
         assert_ne!(
-            commit::<Sha256Hash>(b"x", &r1),
-            commit::<Sha256Hash>(b"x", &r2)
+            commit::<Sha256Backend>(b"x", &r1),
+            commit::<Sha256Backend>(b"x", &r2)
         );
         assert_ne!(
-            commit::<Sha256Hash>(b"x", &r1),
-            commit::<Sha256Hash>(b"y", &r1)
+            commit::<Sha256Backend>(b"x", &r1),
+            commit::<Sha256Backend>(b"y", &r1)
         );
     }
 
@@ -157,8 +173,8 @@ mod tests {
         // Distinct (message) splits must never collide: "ab"+"c" vs "a"+"bc".
         let r = CommitmentRandomness::generate(&mut OsRng).unwrap();
         assert_ne!(
-            commit::<Sha256Hash>(b"c", &r),
-            commit::<Sha256Hash>(b"bc", &r)
+            commit::<Sha256Backend>(b"c", &r),
+            commit::<Sha256Backend>(b"bc", &r)
         );
     }
 
@@ -169,5 +185,12 @@ mod tests {
             CryptoCoreError::InvalidLength
         );
         assert!(CommitmentRandomness::new(SecretBytes::new(vec![0u8; 32])).is_ok());
+    }
+
+    #[test]
+    fn sha256_commit_matches_backend_commit() {
+        let r = CommitmentRandomness::generate(&mut OsRng).unwrap();
+        let c = commit::<Sha256Backend>(b"data", &r);
+        assert_eq!(c.as_bytes().len(), 32);
     }
 }

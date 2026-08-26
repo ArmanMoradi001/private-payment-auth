@@ -7,6 +7,9 @@
 //! re-implements circuit semantics from scratch on its side.
 
 use circuit::Circuit;
+use core::marker::PhantomData;
+use crypto_core::backend::{CryptoBackend, Sha256Backend, Shake256Backend};
+
 use mpcith::{FieldElement, MpcithVerifier, VerificationResult as InnerResult};
 
 use crate::error::ProofError;
@@ -24,22 +27,39 @@ pub enum VerificationResult {
 }
 
 /// Verifies [`NonInteractiveProof`]s against circuits and statements.
-#[derive(Default)]
-pub struct Verifier {
-    generator: FiatShamirChallengeGenerator,
+///
+/// The verifier is generic over a default [`CryptoBackend`] but, at
+/// verification time, it reads the backend id bound into the proof and
+/// re-derives the Fiat–Shamir challenges (and checks view commitments)
+/// with *that* backend. A proof produced under SHA-256 can therefore
+/// never verify under SHAKE256 and vice-versa — the mismatch is caught
+/// as a challenge mismatch or an unsupported-backend error.
+pub struct Verifier<B: CryptoBackend = Sha256Backend> {
+    _marker: PhantomData<B>,
 }
 
-impl Verifier {
-    /// Creates a verifier using the default FS generator.
+impl<B: CryptoBackend> Default for Verifier<B> {
+    fn default() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<B: CryptoBackend> Verifier<B> {
+    /// Creates a verifier.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Verifies a proof end-to-end.
+    /// Verifies a proof end-to-end. The cryptographic backend is taken
+    /// from the proof's bound [`crypto_core::BackendId`], not from this
+    /// verifier's type parameter.
     ///
     /// # Errors
     ///
     /// - [`ProofError::InvalidVersion`] for unknown version/protocol ids.
+    /// - [`ProofError::UnsupportedBackend`] for an unknown backend id.
     /// - [`ProofError::CircuitIdMismatch`] / `InvalidCircuit` when the
     ///   circuit does not match the statement.
     /// - [`ProofError::ChallengeMismatch`] when a stored challenge
@@ -48,6 +68,22 @@ impl Verifier {
     /// - [`ProofError::VerificationFailed`] when a repetition fails
     ///   mpcith verification outright.
     pub fn verify(
+        &self,
+        circuit: &Circuit<FieldElement>,
+        statement: &Statement,
+        proof: &NonInteractiveProof,
+    ) -> Result<VerificationResult, ProofError> {
+        let backend_id = proof.backend_id();
+        if backend_id == Sha256Backend::ID {
+            self.verify_with::<Sha256Backend>(circuit, statement, proof)
+        } else if backend_id == Shake256Backend::ID {
+            self.verify_with::<Shake256Backend>(circuit, statement, proof)
+        } else {
+            Err(ProofError::UnsupportedBackend)
+        }
+    }
+
+    fn verify_with<BB: CryptoBackend>(
         &self,
         circuit: &Circuit<FieldElement>,
         statement: &Statement,
@@ -65,9 +101,11 @@ impl Verifier {
             return Err(ProofError::InvalidStatement);
         }
 
-        // 1. Joint challenge recomputation from public inputs only:
-        // every repetition's stored challenge must equal the challenge
-        // derived from the statement and the FULL commitment transcript.
+        // 1. Joint challenge recomputation from public inputs only,
+        // using the proof's backend. Every repetition's stored challenge
+        // must equal the challenge derived from the statement and the
+        // FULL commitment transcript.
+        let generator = FiatShamirChallengeGenerator::<BB>::default();
         let sessions: Vec<crate::fiat_shamir::FsSession<'_>> = proof
             .repetitions()
             .iter()
@@ -79,7 +117,7 @@ impl Verifier {
                 )
             })
             .collect();
-        let derived = self.generator.derive_all(statement, &sessions)?;
+        let derived = generator.derive_all(statement, &sessions)?;
         for (rep, challenge) in proof.repetitions().iter().zip(&derived) {
             if rep.challenge().hidden_party != challenge.hidden_party {
                 return Err(ProofError::ChallengeMismatch);
@@ -87,7 +125,8 @@ impl Verifier {
         }
 
         // 2. Per-repetition: hand the transcript to the independent
-        // mpcith verifier (which never touches prover code).
+        // mpcith verifier (which never touches prover code) using the
+        // proof's backend for view-commitment checks.
         let inner_statement = statement.to_mpcith();
         let mut inner_proofs = Vec::with_capacity(proof.repetitions().len());
         for (index, rep) in proof.repetitions().iter().enumerate() {
@@ -97,7 +136,7 @@ impl Verifier {
             repetitions: inner_proofs,
         };
 
-        let inner_result = MpcithVerifier::new()
+        let inner_result = MpcithVerifier::<BB>::new_backend()
             .verify(&inner_statement, &inner, circuit)
             .map_err(|_| ProofError::VerificationFailed)?;
         match inner_result {
@@ -132,6 +171,7 @@ fn to_inner_repetition(rep: &crate::proof::ProofRepetition, index: u32) -> mpcit
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ProtocolConfig;
     use crate::prover::Prover;
     use circuit::CircuitBuilder;
     use mpc::PublicValue;
@@ -164,12 +204,13 @@ mod tests {
             &circuit,
             &statement,
             witness,
-            ChaCha20Rng::seed_from_u64(11),
+            ChaCha20Rng::seed_from_u64(13),
+            ProtocolConfig::<crypto_core::Sha256Backend>::default(),
         )
         .expect("valid");
         let proof = prover.prove(4).expect("valid");
         assert_eq!(
-            Verifier::new()
+            Verifier::<crypto_core::Sha256Backend>::new()
                 .verify(&circuit, &statement, &proof)
                 .expect("no error"),
             VerificationResult::Valid
@@ -186,6 +227,7 @@ mod tests {
             &statement,
             witness,
             ChaCha20Rng::seed_from_u64(12),
+            ProtocolConfig::<crypto_core::Sha256Backend>::default(),
         )
         .unwrap();
         let proof = prover.prove(1).expect("valid");
@@ -207,12 +249,13 @@ mod tests {
         let rebuilt = NonInteractiveProof::new(
             proof.version(),
             proof.protocol_id(),
+            proof.backend_id(),
             statement.clone(),
             vec![fixed],
         );
 
         assert_eq!(
-            Verifier::new().verify(&circuit, &statement, &rebuilt),
+            Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &statement, &rebuilt),
             Err(ProofError::ChallengeMismatch)
         );
     }
@@ -226,6 +269,7 @@ mod tests {
             &statement,
             witness,
             ChaCha20Rng::seed_from_u64(13),
+            ProtocolConfig::<crypto_core::Sha256Backend>::default(),
         )
         .unwrap();
         let proof = prover.prove(2).expect("valid");
@@ -233,7 +277,7 @@ mod tests {
         let mut other = statement.clone();
         other.expected_outputs[0] = PublicValue::new(FieldElement::zero());
         assert_eq!(
-            Verifier::new().verify(&circuit, &other, &proof),
+            Verifier::<crypto_core::Sha256Backend>::new().verify(&circuit, &other, &proof),
             Err(ProofError::InvalidStatement)
         );
     }

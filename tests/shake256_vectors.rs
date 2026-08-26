@@ -13,9 +13,9 @@
 
 use crypto_core::backend::{Shake256Backend, DOMAIN_FS};
 use crypto_core::CryptoBackend;
-use sha3::Shake256;
 use digest::ExtendableOutput;
 use digest::XofReader;
+use sha3::Shake256;
 
 /// Raw SHAKE256 XOF to `out_len` bytes (no domain framing).
 fn raw_shake256(input: &[u8], out_len: usize) -> Vec<u8> {
@@ -79,9 +79,10 @@ fn backend_expand_matches_independent_vector() {
 
 mod hex {
     pub fn decode(s: &str) -> Vec<u8> {
-        let s = s.replace('\n', "").replace(' ', "");
-        assert!(s.len() % 2 == 0, "odd hex length");
-        (0..s.len()).step_by(2)
+        let s = s.replace(['\n', ' '], "");
+        assert!(s.len().is_multiple_of(2), "odd hex length");
+        (0..s.len())
+            .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
             .collect()
     }

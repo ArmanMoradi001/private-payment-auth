@@ -82,8 +82,14 @@ pub fn authorize_payment(
     };
 
     // 4. Prove.
-    let mut prover = proof::Prover::new(&bound_circuit, &fs_statement, secrets, rng)
-        .map_err(|_| PaymentError::ProofGenerationFailed)?;
+    let mut prover = proof::Prover::new(
+        &bound_circuit,
+        &fs_statement,
+        secrets,
+        rng,
+        proof::ProtocolConfig::<crypto_core::Sha256Backend>::default(),
+    )
+    .map_err(|_| PaymentError::ProofGenerationFailed)?;
     prover
         .prove(AUTHORIZATION_REPETITIONS)
         .map_err(|_| PaymentError::ProofGenerationFailed)
@@ -137,7 +143,8 @@ pub fn verify_payment_authorization(
         expected_outputs,
     };
 
-    match Verifier::new().verify(&bound_circuit, &fs_statement, proof) {
+    match Verifier::<crypto_core::Sha256Backend>::new().verify(&bound_circuit, &fs_statement, proof)
+    {
         Ok(VerificationResult::Valid) => Ok(true),
         Ok(VerificationResult::Invalid) => Ok(false),
         Err(proof::ProofError::InvalidStatement) => Err(PaymentError::StatementMismatch),

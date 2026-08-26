@@ -1,6 +1,6 @@
 //! Property-based tests for canonical encoding and commitments.
 
-use crypto_core::{commit, open, CanonicalEncode, CommitmentRandomness, Sha256Hash};
+use crypto_core::{commit, open, CanonicalEncode, CommitmentRandomness, Sha256Backend};
 use proptest::prelude::*;
 
 prop_compose! {
@@ -15,8 +15,8 @@ proptest! {
         message in prop::collection::vec(any::<u8>(), 0..512),
         randomness in arb_randomness(),
     ) {
-        let commitment = commit::<Sha256Hash>(&message, &randomness);
-        prop_assert!(open::<Sha256Hash>(&commitment, &message, &randomness));
+        let commitment = commit::<Sha256Backend>(&message, &randomness);
+        prop_assert!(open::<Sha256Backend>(&commitment, &message, &randomness));
     }
 
     #[test]
@@ -33,8 +33,8 @@ proptest! {
         } else {
             modified[i] = byte;
         }
-        let commitment = commit::<Sha256Hash>(&message, &randomness);
-        prop_assert!(!open::<Sha256Hash>(&commitment, &modified, &randomness));
+        let commitment = commit::<Sha256Backend>(&message, &randomness);
+        prop_assert!(!open::<Sha256Backend>(&commitment, &modified, &randomness));
     }
 
     #[test]

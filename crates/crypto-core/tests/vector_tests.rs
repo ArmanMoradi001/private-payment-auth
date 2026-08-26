@@ -1,6 +1,6 @@
 //! Known-answer tests against externally generated vectors.
 
-use crypto_core::{commit, CommitmentRandomness, HashFunction, Sha256Hash};
+use crypto_core::{commit, CommitmentRandomness, HashFunction, Sha256Backend, Sha256Hash};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -73,8 +73,12 @@ fn commitment_vectors() {
         let randomness =
             CommitmentRandomness::new(unhex(&v.randomness_hex).into()).expect("32-byte randomness");
         let expected = unhex(&v.commitment_hex);
-        let c = commit::<Sha256Hash>(&message, &randomness);
-        assert_eq!(c.as_digest().as_bytes(), &expected[..]);
-        assert!(crypto_core::open::<Sha256Hash>(&c, &message, &randomness));
+        let c = commit::<Sha256Backend>(&message, &randomness);
+        assert_eq!(c.as_bytes(), &expected[..]);
+        assert!(crypto_core::open::<Sha256Backend>(
+            &c,
+            &message,
+            &randomness
+        ));
     }
 }

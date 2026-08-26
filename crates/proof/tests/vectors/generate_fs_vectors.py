@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
 """Generates Fiat-Shamir challenge test vectors for the proof crate.
 
-This script INDEPENDENTLY implements the challenge derivation rule
-documented for `private-payment-auth/mpcith/fs/v1`:
+This script INDEPENDENTLY implements the challenge derivation rule used by
+``FiatShamirChallengeGenerator<Sha256Backend>`` for
+``private-payment-auth/mpcith/fs/v1``:
 
-    digest[r] = SHA-256( len_be32(domain) || domain || message )
-    hidden_party[r] = digest[r][0] % 3
+    message = DOMAIN_FS
+            || BACKEND_ID                       # Sha256Backend::ID
+            || PROTOCOL_VERSION (u8 = 2)
+            || statement_encoding
+            || n_reps (u32 BE)
+            || ( repetition_id (u32 BE) || commitments (3 x 32B) ) * n_reps
+            || selector_repetition_id (u32 BE)
 
-Challenges are derived JOINTLY: each repetition's digest absorbs the
-full committed transcript plus its own repetition id as the selector.
+    digest[r]        = SHA-256( len_be32(DOMAIN_FS) || DOMAIN_FS || message )
+    hidden_party[r]  = u64( SHA256( len_be32(DOMAIN_FS) || DOMAIN_FS
+                                   || 0u32 || message )[0:8] ) % 3
 
-    message = version(u8=1)
-           || statement_encoding
-           || n_reps(u32 BE)
-           || ( repetition_id(u32 BE) || commitments(3 x 32B) ) * n_reps
-           || repetition_id[u32 BE]            # selector for digest[r]
+The hidden party uses the backend's ``expand`` (iterative SHA-256 for
+SHA-256), reading the first 8 bytes of the 64-byte expansion as a big-endian
+``u64`` and reducing modulo 3.
+
+Challenges are derived JOINTLY: each repetition's digest absorbs the full
+committed transcript plus its own repetition id as the selector.
 
     statement_encoding =
-              version(u8=1)
-           || circuit_id(32B)
-           || n_public_inputs(u32 BE) || values(32B BE each)
-           || n_expected_outputs(u32 BE) || values(32B BE each)
+              STATEMENT_VERSION (u8 = 1)
+           || circuit_id (32B)
+           || n_public_inputs (u32 BE) || values (32B BE each)
+           || n_expected_outputs (u32 BE) || values (32B BE each)
 
-Field elements are encoded as fixed-width big-endian bytes of their
-integer value (ed25519 scalar field, width 32).
+Field elements are encoded as fixed-width big-endian bytes of their integer
+value (ed25519 scalar field, width 32).
 
 Run from anywhere: writes fiat_shamir_vectors.json next to this file.
 """
@@ -32,7 +40,12 @@ import hashlib
 import json
 import os
 
-DOMAIN = b"private-payment-auth/mpcith/fs/v1"
+# Mirror crypto-core::backend::DOMAIN_FS / Sha256Backend::ID exactly.
+DOMAIN = b"private-payment-auth/fs/v2"  # hash domain bytes
+DOMAIN_LABEL = "private-payment-auth/mpcith/fs/v1"  # JSON metadata label
+BACKEND_ID = b"sha256-v1\0\0\0\0\0\0\0"  # 16 bytes
+PROTOCOL_VERSION = 2
+STATEMENT_VERSION = 1
 
 
 def be32(value: int) -> bytes:
@@ -41,7 +54,7 @@ def be32(value: int) -> bytes:
 
 def encode_statement(circuit_id: bytes, public_inputs: list, expected_outputs: list) -> bytes:
     out = bytearray()
-    out.append(1)  # statement version
+    out.append(STATEMENT_VERSION)
     out += circuit_id
     out += be32(len(public_inputs))
     for v in public_inputs:
@@ -52,34 +65,42 @@ def encode_statement(circuit_id: bytes, public_inputs: list, expected_outputs: l
     return bytes(out)
 
 
-def derive_challenges(
-    circuit_id: bytes,
-    public_inputs: list,
-    expected_outputs: list,
-    sessions: list,
-) -> dict:
+def fs_input(stmt: bytes, sessions: list, selector_id: int) -> bytes:
+    msg = bytearray()
+    msg += DOMAIN
+    msg += BACKEND_ID
+    msg.append(PROTOCOL_VERSION)
+    msg += stmt
+    msg += be32(len(sessions))
+    for rep_id, commitments in sessions:
+        assert len(commitments) == 3
+        msg += be32(rep_id)
+        for c in commitments:
+            assert len(c) == 32
+            msg += c
+    msg += be32(selector_id)
+    return bytes(msg)
+
+
+def fs_digest(stmt: bytes, sessions: list, selector_id: int) -> str:
+    message = fs_input(stmt, sessions, selector_id)
+    framed = be32(len(DOMAIN)) + DOMAIN + be32(len(message)) + message
+    return hashlib.sha256(framed).digest().hex()
+
+
+def hidden_party(stmt: bytes, sessions: list, selector_id: int) -> int:
+    message = fs_input(stmt, sessions, selector_id)
+    framed = be32(len(DOMAIN)) + DOMAIN + (0).to_bytes(4, "big") + message
+    digest = hashlib.sha256(framed).digest()
+    return int.from_bytes(digest[:8], "big") % 3
+
+
+def derive_challenges(circuit_id, public_inputs, expected_outputs, sessions) -> dict:
     """`sessions` is a list of `(repetition_id, commitments)` tuples."""
     stmt = encode_statement(circuit_id, public_inputs, expected_outputs)
-
-    def transcript(selector_id: int) -> bytes:
-        msg = bytearray()
-        msg.append(1)  # protocol version
-        msg += stmt
-        msg += be32(len(sessions))
-        for rep_id, commitments in sessions:
-            assert len(commitments) == 3
-            msg += be32(rep_id)
-            for c in commitments:
-                assert len(c) == 32
-                msg += c
-        msg += be32(selector_id)
-        return be32(len(DOMAIN)) + DOMAIN + bytes(msg)
-
-    digests = [hashlib.sha256(transcript(rep_id)).digest() for rep_id, _ in sessions]
-    return {
-        "digests": [d.hex() for d in digests],
-        "hidden_parties": [d[0] % 3 for d in digests],
-    }
+    digests = [fs_digest(stmt, sessions, rep_id) for rep_id, _ in sessions]
+    parties = [hidden_party(stmt, sessions, rep_id) for rep_id, _ in sessions]
+    return {"digests": digests, "hidden_parties": parties}
 
 
 def case(label, circuit_id, public_inputs, expected_outputs, sessions):
@@ -150,7 +171,7 @@ def main():
         ),
     ]
 
-    doc = {"domain": DOMAIN.decode(), "cases": cases}
+    doc = {"domain": DOMAIN_LABEL, "cases": cases}
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "fiat_shamir_vectors.json")
     with open(out_path, "w") as f:

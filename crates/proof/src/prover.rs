@@ -11,25 +11,28 @@
 use rand_core::CryptoRngCore;
 
 use circuit::Circuit;
-use mpcith::{FieldElement, MpcithProver as InnerProver};
+use crypto_core::backend::{BackendId, CryptoBackend, Sha256Backend};
+use mpcith::FieldElement;
 
+use crate::config::ProtocolConfig;
 use crate::error::ProofError;
 use crate::fiat_shamir::{ChallengeGenerator, FiatShamirChallengeGenerator};
 use crate::proof::{NonInteractiveProof, ProofRepetition};
 use crate::statement::Statement;
 
 /// Produces [`NonInteractiveProof`]s for a fixed
-/// (circuit, statement, witness) triple.
-pub struct Prover<'a, R: CryptoRngCore> {
+/// (circuit, statement, witness) triple, using the [`CryptoBackend`]
+/// selected by `config`.
+pub struct Prover<'a, R: CryptoRngCore, B: CryptoBackend = Sha256Backend> {
     circuit: &'a Circuit<FieldElement>,
     statement: Statement,
     witness: Vec<FieldElement>,
     rng: R,
-    generator: FiatShamirChallengeGenerator,
-    _marker: std::marker::PhantomData<&'a ()>,
+    generator: FiatShamirChallengeGenerator<B>,
+    _marker: std::marker::PhantomData<(&'a (), B, R)>,
 }
 
-impl<'a, R: CryptoRngCore> Prover<'a, R> {
+impl<'a, R: CryptoRngCore, B: CryptoBackend> Prover<'a, R, B> {
     /// Creates a prover after validating the statement against the
     /// circuit and the witness against its input count.
     ///
@@ -43,17 +46,19 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
         statement: &Statement,
         witness: Vec<FieldElement>,
         rng: R,
+        config: ProtocolConfig<B>,
     ) -> Result<Self, ProofError> {
         statement.validate(circuit)?;
         if witness.len() != circuit.num_secret_inputs() {
             return Err(ProofError::InvalidWitness);
         }
+        let _ = config;
         Ok(Self {
             circuit,
             statement: statement.clone(),
             witness,
             rng,
-            generator: FiatShamirChallengeGenerator,
+            generator: FiatShamirChallengeGenerator::<B>::default(),
             _marker: std::marker::PhantomData,
         })
     }
@@ -71,11 +76,10 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
         if repetition_count == 0 {
             return Err(ProofError::InvalidStatement);
         }
-        let generator = self.generator;
         let statement_for_fs = self.statement.clone();
         let mpcith_statement = self.statement.to_mpcith();
 
-        let mut inner = InnerProver::new(
+        let mut inner = mpcith::MpcithProver::<_, B>::new_backend(
             self.circuit,
             &mpcith_statement,
             self.witness.clone(),
@@ -86,13 +90,14 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
         )
         .map_err(proof_error)?;
 
+        let backend_id: BackendId = B::ID;
         let interactive = inner
             .prove_joint_fs(repetition_count, |sessions| {
                 let fs_sessions: Vec<crate::fiat_shamir::FsSession<'_>> = sessions
                     .iter()
                     .map(|(id, commitments)| crate::fiat_shamir::FsSession::new(*id, commitments))
                     .collect();
-                generator
+                self.generator
                     .derive_all(&statement_for_fs, &fs_sessions)
                     .map_err(|_| mpcith::MpcithError::InvalidProtocolState)
             })
@@ -124,7 +129,8 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
 
         Ok(NonInteractiveProof::new(
             crate::PROTOCOL_VERSION,
-            crate::PROTOCOL_VERSION,
+            crate::PROTOCOL_ID,
+            backend_id,
             self.statement.clone(),
             repetitions,
         ))
