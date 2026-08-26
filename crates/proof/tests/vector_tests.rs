@@ -1,11 +1,12 @@
 //! Cross-implementation vectors: the Rust Fiat–Shamir derivation must
-//! reproduce challenges computed by the independent Python script.
+//! reproduce challenges computed by the independent Python script
+//! (`generate_fs_vectors.py` in this directory).
 
 use circuit::CircuitId;
-use crypto_core::{Digest, SecretBytes};
+use crypto_core::Digest;
 use mpc::PublicValue;
 use mpcith::{FieldElement, ViewCommitment};
-use proof::ChallengeGenerator as _;
+use proof::{ChallengeGenerator as _, FiatShamirChallengeGenerator, FsSession};
 
 type Fr = FieldElement;
 
@@ -30,7 +31,6 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 
 #[derive(serde::Deserialize)]
 struct VectorFile {
-    #[allow(dead_code)]
     domain: String,
     cases: Vec<VectorCase>,
 }
@@ -38,13 +38,20 @@ struct VectorFile {
 #[derive(serde::Deserialize)]
 struct VectorCase {
     label: String,
-    repetition_id: u32,
+    #[allow(dead_code)]
+    version: u8,
     circuit_id: String,
     public_inputs: Vec<String>,
     expected_outputs: Vec<String>,
+    sessions: Vec<SessionCase>,
+    expected_digests: Vec<String>,
+    expected_hidden_parties: Vec<u8>,
+}
+
+#[derive(serde::Deserialize)]
+struct SessionCase {
+    repetition_id: u32,
     commitments: Vec<String>,
-    expected_digest: String,
-    expected_hidden_party: u8,
 }
 
 #[test]
@@ -61,7 +68,7 @@ fn rust_fs_matches_python_vectors() {
         "domain drift between implementations"
     );
 
-    let generator = proof::FiatShamirChallengeGenerator;
+    let generator = FiatShamirChallengeGenerator;
     for case in &doc.cases {
         let statement = proof::Statement {
             circuit_id: CircuitId::from_digest(Digest::from(
@@ -79,39 +86,58 @@ fn rust_fs_matches_python_vectors() {
                 .map(|h| PublicValue::new(fr_from_be_hex(h)))
                 .collect(),
         };
-        let commitments: Vec<ViewCommitment> = case
-            .commitments
+        let commitment_sets: Vec<Vec<ViewCommitment>> = case
+            .sessions
             .iter()
-            .map(|h| {
-                let arr: [u8; 32] =
-                    <[u8; 32]>::try_from(hex_to_bytes(h).as_slice()).expect("32-byte commitment");
-                ViewCommitment::from_digest(Digest::from(arr))
+            .map(|s| {
+                s.commitments
+                    .iter()
+                    .map(|h| {
+                        let arr: [u8; 32] = <[u8; 32]>::try_from(hex_to_bytes(h).as_slice())
+                            .expect("32-byte commitment");
+                        ViewCommitment::from_digest(Digest::from(arr))
+                    })
+                    .collect()
             })
             .collect();
+        let sessions: Vec<FsSession<'_>> = case
+            .sessions
+            .iter()
+            .zip(&commitment_sets)
+            .map(|(s, cms)| FsSession::new(mpcith::RepetitionId::new(s.repetition_id), cms))
+            .collect();
 
-        let challenge = generator
-            .derive(
-                &statement,
-                &commitments,
-                mpcith::RepetitionId::new(case.repetition_id),
-            )
-            .unwrap_or_else(|e| panic!("case {} failed: {e}", case.label));
+        // Every selector's full digest must match the Python script's
+        // independent computation (stronger than party equality).
+        for (r, session) in case.sessions.iter().enumerate() {
+            let digest = generator
+                .fs_digest(&statement, &sessions, r)
+                .unwrap_or_else(|e| panic!("case {} failed: {e}", case.label));
+            let actual_hex: String = digest
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            assert_eq!(
+                actual_hex, case.expected_digests[r],
+                "case {} session {}: digest mismatch",
+                case.label, session.repetition_id
+            );
+            assert_eq!(
+                digest.as_bytes()[0] % 3,
+                case.expected_hidden_parties[r],
+                "case {} session {}: hidden party mismatch",
+                case.label,
+                session.repetition_id
+            );
+        }
 
-        assert_eq!(
-            challenge.hidden_party.get(),
-            case.expected_hidden_party,
-            "case {}: hidden party mismatch",
-            case.label
-        );
-        // The full digest must match too (stronger than party equality).
-        // We recover it via a second derivation on the raw message; the
-        // party check plus determinism already pins the digest bytes.
-        let _ = SecretBytes::new(Vec::new());
-        println!(
-            "case {} ok (hidden={})",
-            case.label,
-            challenge.hidden_party.get()
-        );
-        assert_eq!(case.expected_digest.len(), 64);
+        // The trait-level derivation agrees with the raw digests.
+        let challenges = generator
+            .derive_all(&statement, &sessions)
+            .unwrap_or_else(|e| panic!("case {} derive_all failed: {e}", case.label));
+        let parties: Vec<u8> = challenges.iter().map(|c| c.hidden_party.get()).collect();
+        assert_eq!(parties, case.expected_hidden_parties);
+        println!("case {} ok", case.label);
     }
 }

@@ -2,9 +2,8 @@
   "domain": "private-payment-auth/mpcith/fs/v1",
   "cases": [
     {
-      "label": "canonical_fixture",
+      "label": "canonical_fixture_two_reps",
       "version": 1,
-      "repetition_id": 0,
       "circuit_id": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
       "public_inputs": [
         "0000000000000000000000000000000000000000000000000000000000000005"
@@ -12,18 +11,36 @@
       "expected_outputs": [
         "0000000000000000000000000000000000000000000000000000000000000034"
       ],
-      "commitments": [
-        "1111111111111111111111111111111111111111111111111111111111111111",
-        "2222222222222222222222222222222222222222222222222222222222222222",
-        "3333333333333333333333333333333333333333333333333333333333333333"
+      "sessions": [
+        {
+          "repetition_id": 0,
+          "commitments": [
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "3333333333333333333333333333333333333333333333333333333333333333"
+          ]
+        },
+        {
+          "repetition_id": 1,
+          "commitments": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ]
+        }
       ],
-      "expected_digest": "3cad148a78bdef25eb22ce1d3cc144ebb49d1a9046d2098750a67248d67e3901",
-      "expected_hidden_party": 0
+      "expected_digests": [
+        "516824bcefaa1267d67c2198c1bae3df4779a728b18017db04b7a7daaae2e7ba",
+        "3267f277369008491d2074b8fc5a4c1ab52529aaf69203040590f89df0fde8f4"
+      ],
+      "expected_hidden_parties": [
+        0,
+        2
+      ]
     },
     {
-      "label": "different_repetition_id",
+      "label": "joint_binding",
       "version": 1,
-      "repetition_id": 1,
       "circuit_id": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
       "public_inputs": [
         "0000000000000000000000000000000000000000000000000000000000000005"
@@ -31,18 +48,36 @@
       "expected_outputs": [
         "0000000000000000000000000000000000000000000000000000000000000034"
       ],
-      "commitments": [
-        "1111111111111111111111111111111111111111111111111111111111111111",
-        "2222222222222222222222222222222222222222222222222222222222222222",
-        "3333333333333333333333333333333333333333333333333333333333333333"
+      "sessions": [
+        {
+          "repetition_id": 0,
+          "commitments": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ]
+        },
+        {
+          "repetition_id": 1,
+          "commitments": [
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "3333333333333333333333333333333333333333333333333333333333333333"
+          ]
+        }
       ],
-      "expected_digest": "03c17e469a70335e67d109ac478250d41efd39de05e60a804a1293f95961809d",
-      "expected_hidden_party": 0
+      "expected_digests": [
+        "688f1181f64e9a9d81a91094f14aae14e8fb686aeb5fe363839cb44cae886629",
+        "d13b39ad3d993270bad53f5e4e2018d484d5cbbfd877d5fea121bb5c023f2be8"
+      ],
+      "expected_hidden_parties": [
+        2,
+        2
+      ]
     },
     {
-      "label": "multi_value_statement",
+      "label": "multi_value_statement_three_reps",
       "version": 1,
-      "repetition_id": 42,
       "circuit_id": "abababababababababababababababababababababababababababababababab",
       "public_inputs": [
         "000000000000000000000000000000000000000000000000000000000000000b",
@@ -51,13 +86,42 @@
       "expected_outputs": [
         "0000000000000000000000000000000000000000000000000000000000000001"
       ],
-      "commitments": [
-        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-        "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "sessions": [
+        {
+          "repetition_id": 7,
+          "commitments": [
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          ]
+        },
+        {
+          "repetition_id": 8,
+          "commitments": [
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "3333333333333333333333333333333333333333333333333333333333333333"
+          ]
+        },
+        {
+          "repetition_id": 9,
+          "commitments": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ]
+        }
       ],
-      "expected_digest": "31e01875cd32d8ad562dadb16f60f1996d12495863b9a2e4babf58f86d11ffa9",
-      "expected_hidden_party": 1
+      "expected_digests": [
+        "d85524ee8fa4c61232cbd0882dffeccce6705460eb8b0d29bbb6fbf58bdbb3b6",
+        "3430e884691f79c6c43aab44cd5d6376cff061bc07055c43e5896a4952ddf6ae",
+        "231a225183848ccc1c17b7bdbcee3b52220f26c969a14c53044c9861de35bb62"
+      ],
+      "expected_hidden_parties": [
+        0,
+        1,
+        2
+      ]
     }
   ]
 }

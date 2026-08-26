@@ -5,7 +5,9 @@ use ark_ed25519::Fr;
 use circuit::CircuitBuilder;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mpc::PublicValue;
-use proof::{ChallengeGenerator as _, FiatShamirChallengeGenerator, Prover, Statement, Verifier};
+use proof::{
+    ChallengeGenerator as _, FiatShamirChallengeGenerator, FsSession, Prover, Statement, Verifier,
+};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
@@ -45,23 +47,39 @@ fn fixture(size: usize) -> (circuit::Circuit<Fr>, Statement, Vec<Fr>) {
 fn bench_fs_derivation(c: &mut Criterion) {
     let mut group = c.benchmark_group("proof/fs_derivation");
     let gen = FiatShamirChallengeGenerator;
-    for size in [10usize, 100, 1000] {
-        // Commitment count is fixed (3 per repetition), so FS cost is
-        // constant; we still parameterize by the statement's circuit.
+    for (size, reps) in [(10usize, 10u32), (100, 10), (1000, 10)] {
+        // Cost scales with the joint transcript: `reps` sessions of 3
+        // commitments each, over a statement bound to the given circuit.
         let (_, statement, _) = fixture(size);
-        let commitments: Vec<mpcith::ViewCommitment> = (0..3)
-            .map(|i| mpcith::ViewCommitment::from_digest(crypto_core::Digest::new([i as u8; 32])))
+        let commitment_sets: Vec<Vec<mpcith::ViewCommitment>> = (0..reps)
+            .map(|r| {
+                (0..3)
+                    .map(|i| {
+                        mpcith::ViewCommitment::from_digest(crypto_core::Digest::new(
+                            [(r * 3 + i) as u8; 32],
+                        ))
+                    })
+                    .collect()
+            })
             .collect();
-        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &_size| {
-            b.iter(|| {
-                gen.derive(
-                    std::hint::black_box(&statement),
-                    &commitments,
-                    mpcith::RepetitionId::new(0),
-                )
-                .expect("ok")
-            });
-        });
+        let sessions: Vec<FsSession<'_>> = commitment_sets
+            .iter()
+            .enumerate()
+            .map(|(r, cms)| FsSession::new(mpcith::RepetitionId::new(r as u32), cms))
+            .collect();
+        group.bench_with_input(
+            BenchmarkId::new(format!("nodes_{size}"), reps),
+            &(statement, sessions),
+            |b, (statement, sessions)| {
+                b.iter(|| {
+                    gen.derive_all(
+                        std::hint::black_box(statement),
+                        std::hint::black_box(sessions),
+                    )
+                    .expect("ok")
+                });
+            },
+        );
     }
     group.finish();
 }

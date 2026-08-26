@@ -25,8 +25,9 @@ pub struct ProofRepetition {
 }
 
 impl ProofRepetition {
-    /// Builds a repetition. Called by the prover only.
-    pub(crate) fn new(
+    /// Builds a repetition. Construction is public; mutation is not:
+    /// all fields are private and getter-only afterwards.
+    pub fn new(
         commitments: Vec<ViewCommitment>,
         challenge: Challenge,
         opened_views: Vec<PartyView>,
@@ -86,8 +87,9 @@ pub struct NonInteractiveProof {
 }
 
 impl NonInteractiveProof {
-    /// Assembles a proof. Called by the prover only.
-    pub(crate) fn new(
+    /// Assembles a proof. Construction is public; mutation is not:
+    /// all fields are private and getter-only afterwards.
+    pub fn new(
         version: u8,
         protocol_id: u8,
         statement: Statement,

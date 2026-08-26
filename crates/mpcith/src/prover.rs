@@ -60,12 +60,36 @@ pub struct Repetition {
     pub hidden_broadcasts: Vec<FieldElement>,
 }
 
-/// A complete MPCitH proof: independent repetitions over fresh
+/// A complete non-interactive proof: independent repetitions over fresh
 /// sharing, triples, and commitment randomness.
 #[derive(Clone, Debug)]
 pub struct MpcithProof {
     /// One entry per repetition.
     pub repetitions: Vec<Repetition>,
+}
+
+/// One repetition through the commitment phase: the circuit has been
+/// simulated, every party's view built and committed, but no challenge
+/// exists yet and nothing has been opened. Used by Fiat–Shamir transforms
+/// that derive *all* challenges jointly from *all* commitments before any
+/// view is opened (see [`MpcithProver::prove_joint_fs`]).
+#[derive(Clone, Debug)]
+pub struct PartialRepetition {
+    /// Repetition identifier (equals its index in the proof).
+    pub id: RepetitionId,
+    /// Commitments to all three party views, in party order.
+    pub commitments: Vec<crate::commitment::ViewCommitment>,
+    /// All three party views, in party order (never exposed outside
+    /// this crate until their commitment is opened).
+    views: Vec<PartyView>,
+    /// Per-view commitment randomness, in party order.
+    randomness: Vec<SecretBytes>,
+    /// Whether each declared output node is shared, plus its three
+    /// shares; used to assemble the hidden party's output shares.
+    output_vals: Vec<(bool, [FieldElement; 3])>,
+    /// Per-party broadcast contributions (`d_p`, `e_p` pairs per
+    /// multiplication), in party order.
+    broadcasts: Vec<Vec<FieldElement>>,
 }
 
 /// Produces [`MpcithProof`]s for a fixed (circuit, statement, witness)
@@ -108,11 +132,6 @@ struct PartyState {
     triple_shares: Vec<TripleShare>,
     opened_values: Vec<FieldElement>,
 }
-
-/// Challenge derivation hook: maps a repetition's identity and
-/// commitments to its challenge.
-pub type ChallengeDeriver<'a> =
-    dyn FnMut(RepetitionId, &[crate::ViewCommitment]) -> Result<Challenge, MpcithError> + 'a;
 
 impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
     /// Creates a prover after checking statement/witness consistency.
@@ -192,6 +211,10 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
     /// after that repetition's commitments exist and before any view is
     /// opened.
     ///
+    /// Prefer [`Self::prove_joint_fs`] for non-interactive use: deriving
+    /// every challenge from *all* repetitions' commitments jointly is
+    /// what makes per-repetition grinding prohibitively expensive.
+    ///
     /// # Errors
     ///
     /// - [`MpcithError::InvalidRepetitionCount`] if the count is zero.
@@ -210,18 +233,136 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
 
         let mut repetitions = Vec::with_capacity(repetition_count as usize);
         for index in 0..repetition_count {
-            repetitions.push(self.prove_repetition(RepetitionId::new(index), &mut challenge_of)?);
+            let partial = self.commit_repetition(RepetitionId::new(index))?;
+            let challenge = challenge_of(partial.id, &partial.commitments)?;
+            repetitions.push(self.finish_repetition(&partial, challenge)?);
         }
         Ok(MpcithProof { repetitions })
     }
 
-    /// Executes one full repetition end-to-end.
-    #[allow(clippy::too_many_lines)]
-    fn prove_repetition(
+    /// Non-interactive driving mode for Fiat–Shamir transforms that
+    /// derive challenges *jointly*: all `repetition_count` repetitions
+    /// are simulated and committed first; then `challenges_of` receives
+    /// every repetition's `(id, commitments)` at once and must return
+    /// exactly one [`Challenge`] per repetition, in order. Only then are
+    /// views opened.
+    ///
+    /// Because each challenge now depends on *every* repetition's
+    /// commitments, an adversary grinding one repetition's commitments
+    /// for a favorable challenge must simultaneously re-grind all other
+    /// repetitions: the expected work rises from `k·t` hash evaluations
+    /// to roughly `k^t`, restoring the `(1 − 1/k)^t` soundness of the
+    /// interactive protocol.
+    ///
+    /// # Errors
+    ///
+    /// - [`MpcithError::InvalidRepetitionCount`] if the count is zero.
+    /// - [`MpcithError::InvalidProtocolState`] if `challenges_of`
+    ///   returns fewer challenges than repetitions.
+    /// - Any error propagated from `challenges_of`.
+    pub fn prove_joint_fs(
         &mut self,
-        id: RepetitionId,
-        challenge_of: &mut ChallengeDeriver<'_>,
+        repetition_count: u32,
+        mut challenges_of: impl FnMut(
+            &[(RepetitionId, &[crate::ViewCommitment])],
+        ) -> Result<Vec<Challenge>, MpcithError>,
+    ) -> Result<MpcithProof, MpcithError> {
+        if repetition_count == 0 {
+            return Err(MpcithError::InvalidRepetitionCount);
+        }
+
+        let partials = self.commit_phase(repetition_count)?;
+        let sessions: Vec<(RepetitionId, &[crate::ViewCommitment])> = partials
+            .iter()
+            .map(|p| (p.id, p.commitments.as_slice()))
+            .collect();
+        let challenges = challenges_of(&sessions)?;
+        if challenges.len() != partials.len() {
+            return Err(MpcithError::InvalidProtocolState);
+        }
+        let repetitions = partials
+            .iter()
+            .zip(challenges.iter())
+            .map(|(partial, challenge)| self.finish_repetition(partial, *challenge))
+            .collect::<Result<Vec<_>, MpcithError>>()?;
+        Ok(MpcithProof { repetitions })
+    }
+
+    /// Runs the commitment phase for `repetition_count` repetitions:
+    /// simulates each repetition and commits all three party views.
+    /// Nothing is opened yet.
+    ///
+    /// # Errors
+    ///
+    /// - [`MpcithError::InvalidRepetitionCount`] if the count is zero.
+    /// - Propagated simulation/commitment errors.
+    pub fn commit_phase(
+        &mut self,
+        repetition_count: u32,
+    ) -> Result<Vec<PartialRepetition>, MpcithError> {
+        if repetition_count == 0 {
+            return Err(MpcithError::InvalidRepetitionCount);
+        }
+        (0..repetition_count)
+            .map(|index| self.commit_repetition(RepetitionId::new(index)))
+            .collect()
+    }
+
+    /// Completes one committed repetition given its challenge: opens the
+    /// two non-hidden views and assembles the hidden party's response.
+    ///
+    /// # Errors
+    ///
+    /// - [`MpcithError::InvalidChallenge`] if the challenge names no
+    ///   valid party.
+    pub fn finish_repetition(
+        &self,
+        partial: &PartialRepetition,
+        challenge: Challenge,
     ) -> Result<Repetition, MpcithError> {
+        let hidden_index = usize::from(challenge.hidden_party.get());
+        if hidden_index >= usize::from(PARTY_COUNT) {
+            return Err(MpcithError::InvalidChallenge);
+        }
+
+        let mut opened_views = Vec::with_capacity(2);
+        for p in PartyId::new(challenge.hidden_party.get())?.others() {
+            let idx = p.get() as usize;
+            opened_views.push(OpenedView {
+                view: partial.views[idx].clone(),
+                randomness: partial.randomness[idx].clone(),
+            });
+        }
+        opened_views.sort_by_key(|ov| ov.view.party_id.get());
+
+        let hidden_output_shares = partial
+            .output_vals
+            .iter()
+            .map(|(shared, shares)| {
+                if *shared {
+                    shares[hidden_index]
+                } else {
+                    FieldElement::zero()
+                }
+            })
+            .collect();
+
+        Ok(Repetition {
+            id: partial.id,
+            commitments: partial.commitments.clone(),
+            challenge,
+            opened_views,
+            hidden_output_shares,
+            hidden_broadcasts: partial.broadcasts[hidden_index].clone(),
+        })
+    }
+
+    /// Executes one repetition through the commitment phase: simulates
+    /// the 3-party evaluation and commits every party's view. Nothing is
+    /// opened; [`Self::finish_repetition`] completes it once a challenge
+    /// exists.
+    #[allow(clippy::too_many_lines)]
+    fn commit_repetition(&mut self, id: RepetitionId) -> Result<PartialRepetition, MpcithError> {
         // A fresh per-repetition sharing context (3 parties, execution
         // id bound to this repetition). Shares here are drawn directly
         // via share3(); the context documents the domain binding.
@@ -335,48 +476,29 @@ impl<'a, R: CryptoRngCore> MpcithProver<'a, R> {
         // 5. Commit every view with fresh randomness (pre-challenge).
         let mut commitments = Vec::with_capacity(usize::from(PARTY_COUNT));
         let mut randomness = Vec::with_capacity(usize::from(PARTY_COUNT));
+        let mut views = Vec::with_capacity(usize::from(PARTY_COUNT));
         for p in 0..3usize {
             let view = build_view(id, p, &parties)?;
             let r = self.fresh_randomness()?;
             commitments.push(commit_view(&view, &r)?);
             randomness.push(r);
+            views.push(view);
         }
 
-        // 6. Challenge decides which single view stays hidden.
-        // 6. Challenge decides which single view stays hidden; it is
-        // derived from this repetition's commitments by the caller.
-        let challenge = challenge_of(id, &commitments)?;
-        let hidden = challenge.hidden_party.get() as usize;
-
-        // 7. Open the two non-hidden views with their randomness.
-        let mut opened_views = Vec::with_capacity(2);
-        for p in PartyId::new(challenge.hidden_party.get())?.others() {
-            let idx = p.get() as usize;
-            opened_views.push(OpenedView {
-                view: build_view(id, idx, &parties)?,
-                randomness: randomness[idx].clone(),
-            });
-        }
-        opened_views.sort_by_key(|ov| ov.view.party_id.get());
-
-        let hidden_output_shares = output_vals
+        // Per-party broadcast contributions for the (future) hidden
+        // party's response.
+        let broadcasts: Vec<Vec<FieldElement>> = parties
             .iter()
-            .map(|(shared, shares)| {
-                if *shared {
-                    shares[hidden]
-                } else {
-                    FieldElement::zero()
-                }
-            })
+            .map(|state| state.opened_values.clone())
             .collect();
 
-        Ok(Repetition {
+        Ok(PartialRepetition {
             id,
             commitments,
-            challenge,
-            opened_views,
-            hidden_output_shares,
-            hidden_broadcasts: parties[hidden].opened_values.clone(),
+            views,
+            randomness,
+            output_vals,
+            broadcasts,
         })
     }
 

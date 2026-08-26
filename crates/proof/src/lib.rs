@@ -21,8 +21,8 @@ pub const PROTOCOL_VERSION: u8 = 1;
 
 pub use encoding::{deserialize_proof, serialize_proof, ENCODING_VERSION, PROTOCOL_ID};
 pub use error::ProofError;
-pub use fiat_shamir::{ChallengeGenerator, FiatShamirChallengeGenerator, FS_DOMAIN};
-pub use proof::{NonInteractiveProof, ProofId, ProofRepetition};
+pub use fiat_shamir::{ChallengeGenerator, FiatShamirChallengeGenerator, FsSession, FS_DOMAIN};
+pub use proof::{NonInteractiveProof, ProofId, ProofRepetition, PROOF_ID_DOMAIN};
 pub use prover::Prover;
 pub use statement::Statement;
 pub use verifier::{VerificationResult, Verifier};

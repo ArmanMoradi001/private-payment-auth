@@ -1,11 +1,12 @@
 //! The non-interactive prover.
 //!
-//! Wraps the interactive [`mpcith::MpcithProver`] with a Fiat–Shamir
-//! challenge hook: for every repetition, mpcith
-//! commits to all three views and then calls back into
-//! [`FiatShamirChallengeGenerator`] with those commitments. The prover
-//! therefore uses exactly the same challenge derivation as the
-//! verifier — by construction, because both call the same generator.
+//! Wraps the interactive [`mpcith::MpcithProver`] with a *joint*
+//! Fiat–Shamir transform: every repetition is simulated and committed
+//! first; then all challenges are derived from the statement and the
+//! full transcript of commitments; only afterwards are views opened.
+//! The prover therefore uses exactly the same challenge derivation as
+//! the verifier — by construction, because both call the same
+//! generator.
 
 use rand_core::CryptoRngCore;
 
@@ -63,9 +64,13 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
     ///
     /// # Errors
     ///
-    /// - [`ProofError::MalformedEncoding`] if the FS derivation or an
-    ///   mpcith invariant fails.
+    /// - [`ProofError::InvalidStatement`] if `repetition_count` is zero
+    ///   (the joint derivation rejects empty transcripts).
+    /// - [`ProofError::MalformedEncoding`] if an mpcith invariant fails.
     pub fn prove(&mut self, repetition_count: u32) -> Result<NonInteractiveProof, ProofError> {
+        if repetition_count == 0 {
+            return Err(ProofError::InvalidStatement);
+        }
         let generator = self.generator;
         let statement_for_fs = self.statement.clone();
         let mpcith_statement = self.statement.to_mpcith();
@@ -74,16 +79,21 @@ impl<'a, R: CryptoRngCore> Prover<'a, R> {
             self.circuit,
             &mpcith_statement,
             self.witness.clone(),
-            // The inner source is never consulted; prove_with overrides it.
+            // The inner source is never consulted; prove_joint_fs drives
+            // challenges through the joint Fiat–Shamir derivation.
             Box::new(mpcith::DeterministicChallengeSource::default()),
             &mut self.rng,
         )
         .map_err(proof_error)?;
 
         let interactive = inner
-            .prove_with(repetition_count, |repetition_id, commitments| {
+            .prove_joint_fs(repetition_count, |sessions| {
+                let fs_sessions: Vec<crate::fiat_shamir::FsSession<'_>> = sessions
+                    .iter()
+                    .map(|(id, commitments)| crate::fiat_shamir::FsSession::new(*id, commitments))
+                    .collect();
                 generator
-                    .derive(&statement_for_fs, commitments, repetition_id)
+                    .derive_all(&statement_for_fs, &fs_sessions)
                     .map_err(|_| mpcith::MpcithError::InvalidProtocolState)
             })
             .map_err(proof_error)?;

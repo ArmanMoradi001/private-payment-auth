@@ -87,8 +87,8 @@ pub fn deserialize_proof(bytes: &[u8]) -> Result<NonInteractiveProof, ProofError
 
     // The statement has its own self-delimiting decoder; feed it the
     // remainder and resume after it.
-    let statement = Statement::decode(&bytes[c.pos..])?;
-    c.pos += statement.encode().len();
+    let (statement, consumed) = Statement::decode_prefix(&bytes[c.pos..])?;
+    c.pos += consumed;
 
     let n_reps = c.read_u32()? as usize;
     let mut repetitions = Vec::with_capacity(n_reps.min(1024));

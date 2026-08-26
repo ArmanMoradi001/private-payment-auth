@@ -65,23 +65,32 @@ impl Verifier {
             return Err(ProofError::InvalidStatement);
         }
 
-        // 1. Per-repetition: recompute challenges, then delegate to the
-        // independent mpcith verifier.
+        // 1. Joint challenge recomputation from public inputs only:
+        // every repetition's stored challenge must equal the challenge
+        // derived from the statement and the FULL commitment transcript.
+        let sessions: Vec<crate::fiat_shamir::FsSession<'_>> = proof
+            .repetitions()
+            .iter()
+            .enumerate()
+            .map(|(index, rep)| {
+                crate::fiat_shamir::FsSession::new(
+                    mpcith::RepetitionId::new(index as u32),
+                    rep.commitments(),
+                )
+            })
+            .collect();
+        let derived = self.generator.derive_all(statement, &sessions)?;
+        for (rep, challenge) in proof.repetitions().iter().zip(&derived) {
+            if rep.challenge().hidden_party != challenge.hidden_party {
+                return Err(ProofError::ChallengeMismatch);
+            }
+        }
+
+        // 2. Per-repetition: hand the transcript to the independent
+        // mpcith verifier (which never touches prover code).
         let inner_statement = statement.to_mpcith();
         let mut inner_proofs = Vec::with_capacity(proof.repetitions().len());
         for (index, rep) in proof.repetitions().iter().enumerate() {
-            // 1a. Challenge recomputation from public inputs only.
-            let derived = self.generator.derive(
-                statement,
-                rep.commitments(),
-                mpcith::RepetitionId::new(index as u32),
-            )?;
-            if rep.challenge().hidden_party != derived.hidden_party {
-                return Err(ProofError::ChallengeMismatch);
-            }
-
-            // 1b. Reassemble the interactive repetition and hand it to
-            // the mpcith verifier (which never touches prover code).
             inner_proofs.push(to_inner_repetition(rep, index as u32));
         }
         let inner = mpcith::MpcithProof {

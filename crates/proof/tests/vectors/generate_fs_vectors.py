@@ -4,13 +4,17 @@
 This script INDEPENDENTLY implements the challenge derivation rule
 documented for `private-payment-auth/mpcith/fs/v1`:
 
-    digest = SHA-256( len_be32(domain) || domain || message )
-    hidden_party = digest[0] % 3
+    digest[r] = SHA-256( len_be32(domain) || domain || message )
+    hidden_party[r] = digest[r][0] % 3
+
+Challenges are derived JOINTLY: each repetition's digest absorbs the
+full committed transcript plus its own repetition id as the selector.
 
     message = version(u8=1)
            || statement_encoding
-           || repetition_id(u32 BE)
-           || commitments(3 x 32B)
+           || n_reps(u32 BE)
+           || ( repetition_id(u32 BE) || commitments(3 x 32B) ) * n_reps
+           || repetition_id[u32 BE]            # selector for digest[r]
 
     statement_encoding =
               version(u8=1)
@@ -48,107 +52,103 @@ def encode_statement(circuit_id: bytes, public_inputs: list, expected_outputs: l
     return bytes(out)
 
 
-def derive_challenge(
+def derive_challenges(
     circuit_id: bytes,
     public_inputs: list,
     expected_outputs: list,
-    commitments: list,
-    repetition_id: int,
+    sessions: list,
 ) -> dict:
+    """`sessions` is a list of `(repetition_id, commitments)` tuples."""
     stmt = encode_statement(circuit_id, public_inputs, expected_outputs)
-    msg = bytearray()
-    msg.append(1)  # protocol version
-    msg += stmt
-    msg += be32(repetition_id)
-    for c in commitments:
-        assert len(c) == 32
-        msg += c
-    framed = be32(len(DOMAIN)) + DOMAIN + bytes(msg)
-    digest = hashlib.sha256(framed).digest()
+
+    def transcript(selector_id: int) -> bytes:
+        msg = bytearray()
+        msg.append(1)  # protocol version
+        msg += stmt
+        msg += be32(len(sessions))
+        for rep_id, commitments in sessions:
+            assert len(commitments) == 3
+            msg += be32(rep_id)
+            for c in commitments:
+                assert len(c) == 32
+                msg += c
+        msg += be32(selector_id)
+        return be32(len(DOMAIN)) + DOMAIN + bytes(msg)
+
+    digests = [hashlib.sha256(transcript(rep_id)).digest() for rep_id, _ in sessions]
     return {
-        "digest": digest.hex(),
-        "hidden_party": digest[0] % 3,
+        "digests": [d.hex() for d in digests],
+        "hidden_parties": [d[0] % 3 for d in digests],
+    }
+
+
+def case(label, circuit_id, public_inputs, expected_outputs, sessions):
+    r = derive_challenges(circuit_id, public_inputs, expected_outputs, sessions)
+    return {
+        "label": label,
+        "version": 1,
+        "circuit_id": circuit_id.hex(),
+        "public_inputs": [f"{v:064x}" for v in public_inputs],
+        "expected_outputs": [f"{v:064x}" for v in expected_outputs],
+        "sessions": [
+            {"repetition_id": rep_id, "commitments": [c.hex() for c in cms]}
+            for rep_id, cms in sessions
+        ],
+        "expected_digests": r["digests"],
+        "expected_hidden_parties": r["hidden_parties"],
     }
 
 
 def main():
-    cases = []
-
-    # Case 1: the canonical end-to-end fixture ((x+2)*p + x, x=7, p=5 -> 52).
-    # Circuit id below must equal the Rust fixture's compute_id(); the
-    # Rust vector test recomputes it, so here we simply use a fixed id
-    # that the Rust side derives independently as well.
-    c1_commitments = [
-        "1111111111111111111111111111111111111111111111111111111111111111",
-        "2222222222222222222222222222222222222222222222222222222222222222",
-        "3333333333333333333333333333333333333333333333333333333333333333",
+    c1 = [
+        bytes.fromhex("1111111111111111111111111111111111111111111111111111111111111111"),
+        bytes.fromhex("2222222222222222222222222222222222222222222222222222222222222222"),
+        bytes.fromhex("3333333333333333333333333333333333333333333333333333333333333333"),
     ]
-    r1 = derive_challenge(
-        circuit_id=bytes(range(32)),
-        public_inputs=[5],
-        expected_outputs=[52],
-        commitments=[bytes.fromhex(h) for h in c1_commitments],
-        repetition_id=0,
-    )
-    cases.append({
-        "label": "canonical_fixture",
-        "version": 1,
-        "repetition_id": 0,
-        "circuit_id": bytes(range(32)).hex(),
-        "public_inputs": ["0000000000000000000000000000000000000000000000000000000000000005"],
-        "expected_outputs": ["0000000000000000000000000000000000000000000000000000000000000034"],
-        "commitments": c1_commitments,
-        "expected_digest": r1["digest"],
-        "expected_hidden_party": r1["hidden_party"],
-    })
-
-    # Case 2: different repetition id must change the challenge.
-    r2 = derive_challenge(
-        circuit_id=bytes(range(32)),
-        public_inputs=[5],
-        expected_outputs=[52],
-        commitments=[bytes.fromhex(h) for h in c1_commitments],
-        repetition_id=1,
-    )
-    cases.append({
-        "label": "different_repetition_id",
-        "version": 1,
-        "repetition_id": 1,
-        "circuit_id": bytes(range(32)).hex(),
-        "public_inputs": ["0000000000000000000000000000000000000000000000000000000000000005"],
-        "expected_outputs": ["0000000000000000000000000000000000000000000000000000000000000034"],
-        "commitments": c1_commitments,
-        "expected_digest": r2["digest"],
-        "expected_hidden_party": r2["hidden_party"],
-    })
-
-    # Case 3: multiple inputs/outputs and different commitments.
+    c1b = [
+        bytes.fromhex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        bytes.fromhex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        bytes.fromhex("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
+    ]
     c3 = [
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
         "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     ]
-    r3 = derive_challenge(
-        circuit_id=bytes([0xAB] * 32),
-        public_inputs=[11, 22],
-        expected_outputs=[1],
-        commitments=[bytes.fromhex(h) for h in c3],
-        repetition_id=42,
-    )
-    cases.append({
-        "label": "multi_value_statement",
-        "version": 1,
-        "repetition_id": 42,
-        "circuit_id": bytes([0xAB] * 32).hex(),
-        "public_inputs": [
-            "000000000000000000000000000000000000000000000000000000000000000b",
-            "0000000000000000000000000000000000000000000000000000000000000016",
-        ],
-        "expected_outputs": ["0000000000000000000000000000000000000000000000000000000000000001"],
-        "commitments": c3,
-        "expected_digest": r3["digest"],
-        "expected_hidden_party": r3["hidden_party"],
-    })
+    c3 = [bytes.fromhex(h) for h in c3]
+    cid1 = bytes(range(32))
+
+    cases = [
+        # Case 1: two repetitions sharing one statement.
+        case(
+            "canonical_fixture_two_reps",
+            cid1,
+            [5],
+            [52],
+            [(0, c1), (1, c1b)],
+        ),
+        # Case 2: a commitment in the *other* repetition must still change
+        # every digest (joint binding).
+        case(
+            "joint_binding",
+            cid1,
+            [5],
+            [52],
+            [(0, c1b), (1, c1)],
+        ),
+        # Case 3: multiple inputs/outputs, three repetitions, ids != 0..n.
+        case(
+            "multi_value_statement_three_reps",
+            bytes([0xAB] * 32),
+            [11, 22],
+            [1],
+            [
+                (7, c3),
+                (8, c1),
+                (9, c1b),
+            ],
+        ),
+    ]
 
     doc = {"domain": DOMAIN.decode(), "cases": cases}
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),

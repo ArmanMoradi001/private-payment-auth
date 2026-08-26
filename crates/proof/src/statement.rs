@@ -78,6 +78,22 @@ impl Statement {
     ///
     /// - [`ProofError::InvalidVersion`], [`ProofError::MalformedEncoding`].
     pub fn decode(bytes: &[u8]) -> Result<Self, ProofError> {
+        let (statement, consumed) = Self::decode_prefix(bytes)?;
+        if consumed != bytes.len() {
+            return Err(ProofError::MalformedEncoding);
+        }
+        Ok(statement)
+    }
+
+    /// Parses a statement from the front of `bytes`, returning it with
+    /// the number of bytes consumed. Trailing bytes are allowed, so an
+    /// embedded statement can be decoded from a larger buffer (a proof,
+    /// for instance).
+    ///
+    /// # Errors
+    ///
+    /// - [`ProofError::InvalidVersion`], [`ProofError::MalformedEncoding`].
+    pub fn decode_prefix(bytes: &[u8]) -> Result<(Self, usize), ProofError> {
         let mut c = Cursor { bytes, pos: 0 };
         let version = c.read_u8()?;
         if version != STATEMENT_VERSION {
@@ -98,14 +114,14 @@ impl Statement {
         for _ in 0..n_out {
             expected_outputs.push(PublicValue::new(read_element(&mut c)?));
         }
-        if c.pos != bytes.len() {
-            return Err(ProofError::MalformedEncoding);
-        }
-        Ok(Self {
-            circuit_id,
-            public_inputs,
-            expected_outputs,
-        })
+        Ok((
+            Self {
+                circuit_id,
+                public_inputs,
+                expected_outputs,
+            },
+            c.pos,
+        ))
     }
 
     /// Converts into the mpcith-layer statement type.

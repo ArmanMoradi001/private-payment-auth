@@ -34,7 +34,7 @@ pub use encoding::{
     decode_proof, decode_view, encode_proof, encode_view, serialize_proof, ENCODING_VERSION,
 };
 pub use error::MpcithError;
-pub use prover::{MpcithProof, MpcithProver, OpenedView, Repetition};
+pub use prover::{MpcithProof, MpcithProver, OpenedView, PartialRepetition, Repetition};
 pub use statement::Statement;
 pub use transcript::{MpcithTranscript, RepetitionTranscript};
 pub use types::{
