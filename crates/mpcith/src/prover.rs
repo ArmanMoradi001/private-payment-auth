@@ -11,6 +11,7 @@
 
 use ark_ff::{UniformRand, Zero};
 use crypto_core::backend::{CryptoBackend, Sha256Backend};
+use core::fmt;
 use crypto_core::SecretBytes;
 use mpc::ShareContext;
 use rand_core::CryptoRngCore;
@@ -37,7 +38,7 @@ pub struct OpenedView {
 /// One repetition: three pre-challenge commitments, the verifier's
 /// challenge, and the post-challenge response (two opened views plus
 /// the hidden party's output shares).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Repetition {
     /// Repetition identifier (equals its index in the proof).
     pub id: RepetitionId,
@@ -59,6 +60,22 @@ pub struct Repetition {
     /// the hidden party leaks nothing and lets the verifier reconstruct
     /// the global masks.
     pub hidden_broadcasts: Vec<FieldElement>,
+}
+
+impl fmt::Debug for Repetition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `hidden_output_shares` are the secret shares of the hidden party;
+        // only their count is shown. `opened_views` (PartyView) and their
+        // `randomness` (SecretBytes) redact themselves.
+        f.debug_struct("Repetition")
+            .field("id", &self.id)
+            .field("commitments", &self.commitments.len())
+            .field("challenge", &self.challenge)
+            .field("opened_views", &self.opened_views)
+            .field("hidden_output_shares", &self.hidden_output_shares.len())
+            .field("hidden_broadcasts", &self.hidden_broadcasts.len())
+            .finish()
+    }
 }
 
 /// A complete non-interactive proof: independent repetitions over fresh

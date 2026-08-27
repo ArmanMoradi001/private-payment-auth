@@ -28,6 +28,8 @@ verifier = { path = "crates/verifier", version = "0.1.0" }
 proptest = "1.4"
 rand_core = "0.6"
 rand_chacha = "0.3"
+zeroize = { version = "1.8", features = ["derive"] }
+subtle = "2.5"
 
 [[test]]
 name = "smoke"

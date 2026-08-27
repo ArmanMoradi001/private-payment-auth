@@ -17,7 +17,7 @@ use crate::types::{FieldElement, PartyId, RepetitionId};
 
 /// One party's share `(a_i, b_i, c_i)` of a Beaver triple with
 /// `c = a · b`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TripleShare {
     /// Share of the first multiplicand mask.
     pub a: FieldElement,
@@ -32,7 +32,7 @@ pub struct TripleShare {
 /// The verifier replays the circuit and checks each recorded operation
 /// in order against its own recomputation; the `output` node id makes
 /// misalignment detectable.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum LocalOperation {
     /// Shared addition (possibly adding a plaintext public value):
     /// `share = lhs + rhs` where at most one side is this party's
@@ -139,6 +139,37 @@ impl Zeroize for PartyView {
 impl Drop for PartyView {
     fn drop(&mut self) {
         self.zeroize();
+    }
+}
+
+impl fmt::Debug for TripleShare {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Shares (a, b, c) are secret; never render their values.
+        f.write_str("TripleShare([REDACTED])")
+    }
+}
+
+impl fmt::Debug for LocalOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `share`/`public`/`d`/`e` are secret shares or masks; only the
+        // public routing information (output node, triple index) is shown.
+        match self {
+            LocalOperation::Add { output, .. } => {
+                f.debug_struct("Add").field("output", output).finish()
+            }
+            LocalOperation::MulPublic { output, .. } => {
+                f.debug_struct("MulPublic").field("output", output).finish()
+            }
+            LocalOperation::BeaverMul {
+                output,
+                triple_index,
+                ..
+            } => f
+                .debug_struct("BeaverMul")
+                .field("output", output)
+                .field("triple_index", triple_index)
+                .finish(),
+        }
     }
 }
 

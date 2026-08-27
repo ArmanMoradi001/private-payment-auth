@@ -5,6 +5,8 @@
 //! can mutate a proof in place. Every repetition stores the challenge
 //! for convenience/auditability, but verifiers must recompute it.
 
+use core::fmt;
+
 use crypto_core::backend::BackendId;
 use crypto_core::{Digest, HashFunction, SecretBytes, Sha256Hash};
 use mpcith::{Challenge, FieldElement, PartyView, ViewCommitment};
@@ -15,7 +17,7 @@ use crate::statement::Statement;
 pub const PROOF_ID_DOMAIN: &[u8] = b"private-payment-auth/proof/id/v2";
 
 /// One Fiat–Shamir repetition inside a [`NonInteractiveProof`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ProofRepetition {
     commitments: Vec<ViewCommitment>,
     challenge: Challenge,
@@ -75,6 +77,22 @@ impl ProofRepetition {
     /// against the statement's expected outputs.
     pub fn hidden_output_shares(&self) -> &[FieldElement] {
         &self.hidden_output_shares
+    }
+}
+
+impl fmt::Debug for ProofRepetition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `hidden_output_shares` are secret; only their count is shown.
+        // `opened_views` (PartyView) and `opening_randomness`
+        // (SecretBytes) redact themselves.
+        f.debug_struct("ProofRepetition")
+            .field("commitments", &self.commitments.len())
+            .field("challenge", &self.challenge)
+            .field("opened_views", &self.opened_views)
+            .field("opening_randomness", &self.opening_randomness.len())
+            .field("hidden_output_shares", &self.hidden_output_shares.len())
+            .field("hidden_broadcasts", &self.hidden_broadcasts.len())
+            .finish()
     }
 }
 
