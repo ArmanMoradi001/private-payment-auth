@@ -707,7 +707,9 @@ dependencies = [
  "rand_core 0.6.4",
  "secret-sharing",
  "sha3",
+ "subtle",
  "verifier",
+ "zeroize",
 ]
 
 [[package]]
