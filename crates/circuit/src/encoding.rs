@@ -35,6 +35,13 @@ use mpc::PublicValue;
 /// Current canonical encoding version.
 pub const ENCODING_VERSION: u8 = 1;
 
+/// Maximum number of nodes a circuit decoder will accept.
+///
+/// Bounds decode-time allocation and prevents a hostile circuit from
+/// driving unbounded work. The verifier's recursive helpers are bounded
+/// by this limit as well (see `node_depends_on_secrets`).
+pub const MAX_CIRCUIT_NODES: usize = 1_000_000;
+
 /// Node variant tags.
 const TAG_SECRET_INPUT: u8 = 0;
 const TAG_PUBLIC_INPUT: u8 = 1;
@@ -100,6 +107,9 @@ pub fn deserialize<F: PrimeField>(bytes: &[u8]) -> Result<Circuit<F>, CircuitErr
     }
 
     let num_nodes = cursor.read_u32()? as usize;
+    if num_nodes > MAX_CIRCUIT_NODES {
+        return Err(CircuitError::ExcessiveSize);
+    }
     let width = element_width::<F>();
     let mut nodes = Vec::with_capacity(num_nodes.min(1024));
     for _ in 0..num_nodes {

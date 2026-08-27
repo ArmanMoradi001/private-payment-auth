@@ -23,6 +23,18 @@ pub const POLICY_ID_DOMAIN: &[u8] = b"private-payment-auth/policy/v1";
 /// `SHA-256("private-payment-auth/credential/v1" ‖ secret_bytes)`.
 pub const CREDENTIAL_COMMITMENT_DOMAIN: &[u8] = b"private-payment-auth/credential/v1";
 
+/// Maximum nesting depth of a [`Policy`] tree accepted by validation.
+///
+/// Guards the recursive validator and compiler against stack exhaustion
+/// from a hostile deeply-nested policy.
+pub const MAX_POLICY_DEPTH: usize = 100;
+
+/// Maximum number of credentials a [`Policy`] may reference in total.
+///
+/// Bounds compilation and witness sizing; a policy referencing an
+/// unbounded number of credentials would otherwise drive unbounded work.
+pub const MAX_CREDENTIAL_COUNT: usize = 1000;
+
 /// One-byte variant tags for the canonical policy encoding.
 mod tag {
     pub(super) const THRESHOLD: u8 = 1;
@@ -146,9 +158,25 @@ impl Policy {
     ///   credential list.
     /// - [`crate::PolicyError::ThresholdExceedsCount`] when
     ///   `k > credentials.len()`.
+    /// - [`crate::PolicyError::ExcessiveCredentials`] when the total
+    ///   credential count exceeds [`MAX_CREDENTIAL_COUNT`].
+    /// - [`crate::PolicyError::ExcessivePolicyDepth`] when nesting
+    ///   exceeds [`MAX_POLICY_DEPTH`].
     /// - [`crate::PolicyError::MalformedPolicy`] for empty `And`/`Or`
     ///   combinations or an invalid nested sub-policy.
     pub fn validate(&self) -> Result<(), crate::error::PolicyError> {
+        let mut creds = 0usize;
+        self.validate_impl(0, &mut creds)
+    }
+
+    fn validate_impl(
+        &self,
+        depth: usize,
+        creds: &mut usize,
+    ) -> Result<(), crate::error::PolicyError> {
+        if depth > MAX_POLICY_DEPTH {
+            return Err(crate::error::PolicyError::ExcessivePolicyDepth);
+        }
         match self {
             Self::Threshold { k, credentials } => {
                 if *k == 0 {
@@ -160,6 +188,10 @@ impl Policy {
                 if *k > credentials.len() {
                     return Err(crate::error::PolicyError::ThresholdExceedsCount);
                 }
+                *creds += credentials.len();
+                if *creds > MAX_CREDENTIAL_COUNT {
+                    return Err(crate::error::PolicyError::ExcessiveCredentials);
+                }
                 Ok(())
             }
             Self::AmountAtMost { .. } => Ok(()),
@@ -168,7 +200,7 @@ impl Policy {
                     return Err(crate::error::PolicyError::MalformedPolicy);
                 }
                 for policy in policies {
-                    policy.validate()?;
+                    policy.validate_impl(depth + 1, creds)?;
                 }
                 Ok(())
             }

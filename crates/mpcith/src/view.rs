@@ -9,7 +9,9 @@
 
 use core::fmt;
 
+use ark_ff::Zero;
 use circuit::NodeId;
+use zeroize::Zeroize;
 
 use crate::types::{FieldElement, PartyId, RepetitionId};
 
@@ -104,6 +106,39 @@ impl fmt::Debug for PartyView {
             )
             .field("opened_values", &self.opened_values.len())
             .finish()
+    }
+}
+
+impl Zeroize for PartyView {
+    fn zeroize(&mut self) {
+        for v in &mut self.input_shares {
+            *v = FieldElement::zero();
+        }
+        for op in &mut self.local_operations {
+            match op {
+                LocalOperation::Add { share, .. } => *share = FieldElement::zero(),
+                LocalOperation::MulPublic { share, .. } => *share = FieldElement::zero(),
+                LocalOperation::BeaverMul { share, d, e, .. } => {
+                    *share = FieldElement::zero();
+                    *d = FieldElement::zero();
+                    *e = FieldElement::zero();
+                }
+            }
+        }
+        for t in &mut self.triple_shares {
+            t.a = FieldElement::zero();
+            t.b = FieldElement::zero();
+            t.c = FieldElement::zero();
+        }
+        for v in &mut self.opened_values {
+            *v = FieldElement::zero();
+        }
+    }
+}
+
+impl Drop for PartyView {
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 

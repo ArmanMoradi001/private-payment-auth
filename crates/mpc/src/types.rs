@@ -6,6 +6,10 @@
 //! secret. The types here deliberately do not carry Shamir metadata
 //! (thresholds or share indices).
 
+use ark_ff::Zero;
+use zeroize::Zeroize;
+
+
 /// A plaintext field element that is known publicly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicValue<F>(F);
@@ -109,6 +113,20 @@ impl<F> SharedValue<F> {
 impl<F> core::fmt::Debug for SharedValue<F> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("SharedValue([REDACTED])")
+    }
+}
+
+impl<F: Clone + Zero> Zeroize for Share<F> {
+    fn zeroize(&mut self) {
+        self.0 = F::zero();
+    }
+}
+
+impl<F: Clone + Zero> Zeroize for SharedValue<F> {
+    fn zeroize(&mut self) {
+        for share in &mut self.shares {
+            share.zeroize();
+        }
     }
 }
 

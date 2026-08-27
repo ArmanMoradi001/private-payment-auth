@@ -36,6 +36,12 @@ use crate::view::{LocalOperation, PartyView, TripleShare};
 /// Current canonical encoding version.
 pub const ENCODING_VERSION: u8 = 1;
 
+/// Maximum number of repetitions a proof decoder will accept.
+///
+/// Bounds decode-time work and guards against a hostile proof forcing
+/// unbounded verification cost. Mirrors the proof-layer limit.
+pub const MAX_REPETITIONS: usize = 10_000;
+
 const TAG_ADD: u8 = 0;
 const TAG_MUL_PUBLIC: u8 = 1;
 const TAG_BEAVER_MUL: u8 = 2;
@@ -343,6 +349,9 @@ pub fn decode_proof(bytes: &[u8]) -> Result<crate::prover::MpcithProof, MpcithEr
         return Err(MpcithError::MalformedEncoding);
     }
     let n_reps = c.read_u32()? as usize;
+    if n_reps > MAX_REPETITIONS {
+        return Err(MpcithError::MalformedEncoding);
+    }
     let mut repetitions = Vec::with_capacity(n_reps.min(1024));
     while repetitions.len() < n_reps {
         let remaining = &bytes[c.pos..];

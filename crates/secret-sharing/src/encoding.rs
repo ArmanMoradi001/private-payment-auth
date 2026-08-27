@@ -49,12 +49,15 @@ impl Share {
         if bytes[0] != SHARE_VERSION {
             return Err(SecretSharingError::MalformedEncoding);
         }
-        let threshold = u32::from_be_bytes(bytes[1..5].try_into().expect("fixed slice"));
-        let share_count = u32::from_be_bytes(bytes[5..9].try_into().expect("fixed slice"));
-        let index = u32::from_be_bytes(bytes[9..13].try_into().expect("fixed slice"));
+        let threshold = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+        let share_count = u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
+        let index = u32::from_be_bytes([bytes[9], bytes[10], bytes[11], bytes[12]]);
         let value = crate::field::element_from_be_bytes(&bytes[13..])
             .map_err(|_| SecretSharingError::InvalidFieldElement)?;
         if threshold == 0 || share_count == 0 {
+            return Err(SecretSharingError::MalformedEncoding);
+        }
+        if share_count as usize > crate::shamir::MAX_SHARE_COUNT {
             return Err(SecretSharingError::MalformedEncoding);
         }
         if index == 0 || index > share_count {

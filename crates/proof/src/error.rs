@@ -25,6 +25,9 @@ pub enum ProofError {
     OutputMismatch,
     /// The proof's backend id is unknown/unsupported.
     UnsupportedBackend,
+    /// A length prefix exceeds the maximum size permitted for safe
+    /// decoding (resource-exhaustion guard).
+    ExcessiveRepetitions,
 }
 
 impl fmt::Display for ProofError {
@@ -40,6 +43,7 @@ impl fmt::Display for ProofError {
             Self::CircuitIdMismatch => "circuit id mismatch",
             Self::OutputMismatch => "output mismatch",
             Self::UnsupportedBackend => "unsupported cryptographic backend",
+            Self::ExcessiveRepetitions => "proof exceeds maximum permitted repetition count",
         };
         f.write_str(msg)
     }

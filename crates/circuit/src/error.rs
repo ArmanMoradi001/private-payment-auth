@@ -29,6 +29,9 @@ pub enum CircuitError {
     TrailingBytes,
     /// Encoded bytes ended before a complete value was read.
     UnexpectedEnd,
+    /// A length prefix exceeds the maximum size permitted for safe
+    /// decoding (resource-exhaustion guard).
+    ExcessiveSize,
 }
 
 impl fmt::Display for CircuitError {
@@ -43,6 +46,7 @@ impl fmt::Display for CircuitError {
             Self::UnsupportedVersion => "unsupported encoding version",
             Self::TrailingBytes => "trailing bytes after circuit",
             Self::UnexpectedEnd => "unexpected end of encoding",
+            Self::ExcessiveSize => "encoded structure exceeds maximum permitted size",
         };
         f.write_str(msg)
     }

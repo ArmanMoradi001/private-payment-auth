@@ -16,6 +16,10 @@ pub enum PolicyError {
     MalformedPolicy,
     /// Compiling the policy into a circuit failed.
     CircuitCompilationFailed,
+    /// The policy tree is deeper than the permitted maximum.
+    ExcessivePolicyDepth,
+    /// The policy references more credentials than permitted.
+    ExcessiveCredentials,
 }
 
 impl fmt::Display for PolicyError {
@@ -26,6 +30,8 @@ impl fmt::Display for PolicyError {
             Self::ThresholdExceedsCount => "threshold exceeds credential count",
             Self::MalformedPolicy => "malformed policy structure",
             Self::CircuitCompilationFailed => "policy compilation to circuit failed",
+            Self::ExcessivePolicyDepth => "policy tree exceeds maximum permitted depth",
+            Self::ExcessiveCredentials => "policy references more credentials than permitted",
         };
         f.write_str(msg)
     }

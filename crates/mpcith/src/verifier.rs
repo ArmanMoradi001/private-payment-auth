@@ -440,23 +440,46 @@ impl<B: CryptoBackend> MpcithVerifier<B> {
 }
 
 /// Whether a node's evaluation depends on at least one secret input.
+///
+/// Implemented iteratively with an explicit stack so that a deeply nested
+/// circuit (up to [`crate::circuit::MAX_CIRCUIT_NODES`]) cannot overflow
+/// the call stack.
 fn node_depends_on_secrets(circuit: &Circuit<FieldElement>, id: circuit::NodeId) -> bool {
-    fn walk(circuit: &Circuit<FieldElement>, index: usize, cache: &mut [Option<bool>]) -> bool {
-        if let Some(v) = cache[index] {
-            return v;
+    let mut cache: Vec<Option<bool>> = vec![None; circuit.nodes().len()];
+    // Iterative post-order traversal: push children, then resolve the
+    // parent only after both children are cached.
+    let mut stack: Vec<(usize, bool)> = vec![(id.as_usize(), false)];
+    while let Some(&(idx, processed)) = stack.last() {
+        if cache[idx].is_some() {
+            stack.pop();
+            continue;
         }
-        let result = match circuit.nodes()[index] {
-            circuit::Node::SecretInput => true,
-            circuit::Node::PublicInput | circuit::Node::Constant(_) => false,
+        if processed {
+            let result = match circuit.nodes()[idx] {
+                circuit::Node::SecretInput => true,
+                circuit::Node::PublicInput | circuit::Node::Constant(_) => false,
+                circuit::Node::Add(a, b) | circuit::Node::Mul(a, b) => {
+                    cache[a.as_usize()].unwrap() || cache[b.as_usize()].unwrap()
+                }
+            };
+            cache[idx] = Some(result);
+            stack.pop();
+            continue;
+        }
+        stack.last_mut().unwrap().1 = true;
+        match circuit.nodes()[idx] {
             circuit::Node::Add(a, b) | circuit::Node::Mul(a, b) => {
-                walk(circuit, a.as_usize(), cache) || walk(circuit, b.as_usize(), cache)
+                if cache[a.as_usize()].is_none() {
+                    stack.push((a.as_usize(), false));
+                }
+                if cache[b.as_usize()].is_none() {
+                    stack.push((b.as_usize(), false));
+                }
             }
-        };
-        cache[index] = Some(result);
-        result
+            _ => {}
+        }
     }
-    let mut cache = vec![None; circuit.nodes().len()];
-    walk(circuit, id.as_usize(), &mut cache)
+    cache[id.as_usize()].unwrap_or(false)
 }
 
 #[cfg(test)]

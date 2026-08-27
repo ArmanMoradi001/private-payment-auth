@@ -10,6 +10,7 @@
 use crypto_core::SecretBytes;
 use policy::range_check::AMOUNT_BIT_LEN;
 use policy::Policy;
+use zeroize::Zeroize;
 
 use crate::amount::Amount;
 use crate::error::PaymentError;
@@ -80,6 +81,27 @@ impl core::fmt::Debug for PrivateWitness {
             .field("credentials", &self.credential_secrets.len())
             .field("amount", &self.amount)
             .finish_non_exhaustive()
+    }
+}
+
+impl Zeroize for PrivateWitness {
+    fn zeroize(&mut self) {
+        for secret in &mut self.credential_secrets {
+            secret.zeroize();
+        }
+        self.amount.value = 0;
+        for bit in &mut self.amount_bits {
+            *bit = false;
+        }
+        for bit in &mut self.difference_bits {
+            *bit = false;
+        }
+    }
+}
+
+impl Drop for PrivateWitness {
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 

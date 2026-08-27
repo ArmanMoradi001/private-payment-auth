@@ -11,6 +11,7 @@
 use ark_ff::PrimeField;
 use rand_core::CryptoRngCore;
 use std::collections::BTreeSet;
+use zeroize::Zeroize;
 
 use crate::context::ShareContext;
 use crate::error::MpcError;
@@ -31,6 +32,14 @@ pub struct BeaverTriple<F> {
 impl<F> core::fmt::Debug for BeaverTriple<F> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("BeaverTriple([REDACTED])")
+    }
+}
+
+impl<F: Clone + ark_ff::Zero> Zeroize for BeaverTriple<F> {
+    fn zeroize(&mut self) {
+        self.a.zeroize();
+        self.b.zeroize();
+        self.c.zeroize();
     }
 }
 

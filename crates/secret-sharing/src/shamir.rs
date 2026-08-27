@@ -14,9 +14,10 @@ use crypto_core::SecretBytes;
 
 /// Maximum supported share count.
 ///
-/// Share indices are non-zero `u32` values, so at most `u32::MAX` shares can
-/// carry distinct indices.
-pub const MAX_SHARE_COUNT: usize = u32::MAX as usize;
+/// Bounds both split-time generation and reconstruction input size. A
+/// caller attempting to reconstruct from an unbounded number of shares
+/// would otherwise drive quadratic duplicate-checking cost.
+pub const MAX_SHARE_COUNT: usize = 1000;
 
 /// Splits a secret into `share_count` shares requiring `threshold` shares to
 /// reconstruct.
@@ -98,6 +99,9 @@ pub fn split<R: rand_core::CryptoRngCore>(
 pub fn reconstruct(shares: &[Share]) -> Result<SecretBytes, SecretSharingError> {
     if shares.is_empty() {
         return Err(SecretSharingError::EmptyInput);
+    }
+    if shares.len() > MAX_SHARE_COUNT {
+        return Err(SecretSharingError::InvalidShareCount);
     }
 
     let first = &shares[0];

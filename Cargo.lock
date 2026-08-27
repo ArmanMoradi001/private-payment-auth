@@ -604,6 +604,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "secret-sharing",
+ "zeroize",
 ]
 
 [[package]]
@@ -619,6 +620,7 @@ dependencies = [
  "proptest",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "zeroize",
 ]
 
 [[package]]
@@ -682,6 +684,7 @@ dependencies = [
  "proptest",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "zeroize",
 ]
 
 [[package]]
@@ -696,10 +699,15 @@ dependencies = [
  "digest",
  "mpc",
  "mpcith",
+ "payment",
+ "policy",
+ "proof",
  "proptest",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "secret-sharing",
  "sha3",
+ "verifier",
 ]
 
 [[package]]

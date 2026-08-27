@@ -35,6 +35,12 @@ pub const PROTOCOL_ID: u8 = 1;
 /// rejected outright (never silently defaulted to SHA-256).
 pub const SUPPORTED_BACKEND_IDS: &[BackendId] = &[Sha256Backend::ID, Shake256Backend::ID];
 
+/// Maximum number of repetitions a proof decoder will accept.
+///
+/// Bounds decode-time work and guards against a hostile proof forcing
+/// unbounded verification cost.
+pub const MAX_PROOF_REPETITIONS: usize = 10_000;
+
 /// Serializes a proof into its canonical byte representation.
 pub fn serialize_proof(proof: &NonInteractiveProof) -> Vec<u8> {
     let mut out = Vec::new();
@@ -108,6 +114,9 @@ pub fn deserialize_proof(bytes: &[u8]) -> Result<NonInteractiveProof, ProofError
     c.pos += consumed;
 
     let n_reps = c.read_u32()? as usize;
+    if n_reps > MAX_PROOF_REPETITIONS {
+        return Err(ProofError::ExcessiveRepetitions);
+    }
     let mut repetitions = Vec::with_capacity(n_reps.min(1024));
     for _ in 0..n_reps {
         repetitions.push(decode_repetition(&mut c)?);
