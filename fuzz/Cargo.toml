@@ -1,0 +1,60 @@
+[package]
+name = "payment-infra-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# Workspace crates under test (pinned by path so `cargo fuzz` resolves them).
+circuit = { path = "../crates/circuit" }
+crypto-core = { path = "../crates/crypto-core" }
+mpc = { path = "../crates/mpc" }
+mpcith = { path = "../crates/mpcith" }
+proof = { path = "../crates/proof" }
+payment = { path = "../crates/payment" }
+policy = { path = "../crates/policy" }
+secret-sharing = { path = "../crates/secret-sharing" }
+
+ark-ed25519 = "0.4"
+ark-ff = "0.4"
+
+[[bin]]
+name = "decode_share"
+path = "fuzz_targets/decode_share.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_circuit"
+path = "fuzz_targets/decode_circuit.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_mpcith_proof"
+path = "fuzz_targets/decode_mpcith_proof.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_proof"
+path = "fuzz_targets/decode_proof.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_payment"
+path = "fuzz_targets/decode_payment.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "policy_range_check"
+path = "fuzz_targets/policy_range_check.rs"
+test = false
+doc = false
