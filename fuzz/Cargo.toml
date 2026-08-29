@@ -4,6 +4,9 @@ version = "0.0.0"
 publish = false
 edition = "2021"
 
+# Keep the fuzz crate out of the parent workspace so `cargo fuzz` owns it.
+[workspace]
+
 [package.metadata]
 cargo-fuzz = true
 
@@ -56,5 +59,29 @@ doc = false
 [[bin]]
 name = "policy_range_check"
 path = "fuzz_targets/policy_range_check.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_policy_decode"
+path = "fuzz_targets/fuzz_policy_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_policy_validate"
+path = "fuzz_targets/fuzz_policy_validate.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_policy_normalize"
+path = "fuzz_targets/fuzz_policy_normalize.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_policy_compile"
+path = "fuzz_targets/fuzz_policy_compile.rs"
 test = false
 doc = false
