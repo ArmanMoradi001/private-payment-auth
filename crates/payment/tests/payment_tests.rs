@@ -8,7 +8,7 @@ use payment::{
     AmountUnit, AuthorizationRelation, PaymentError, PaymentStatement, PrivateWitness,
     PROTOCOL_VERSION,
 };
-use policy::{credential_commitment, CredentialPolicy, Policy};
+use policy::{credential_commitment, AmountLimit, CredentialId, Policy, ThresholdK};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
@@ -26,21 +26,21 @@ struct Fixture {
 
 fn fixture(amount: u64) -> Fixture {
     let mut secrets = Vec::new();
-    let credentials = (0..3)
+    let members: Vec<Policy> = (0..3)
         .map(|_| {
             let secret = SecretBytes::new(vec![secrets.len() as u8 + 1, 0xbe, 0xef]);
             secrets.push(secret.clone());
-            CredentialPolicy {
-                expected_commitment: credential_commitment(&secret),
-            }
+            let id = CredentialId::from_commitment(credential_commitment(&secret));
+            Policy::Credential(id)
         })
         .collect();
-    let policy = Policy::And {
-        policies: vec![
-            Policy::Threshold { k: 2, credentials },
-            Policy::AmountAtMost { limit: LIMIT },
-        ],
-    };
+    let policy = Policy::And(vec![
+        Policy::Threshold {
+            k: ThresholdK::new(2),
+            members,
+        },
+        Policy::AmountAtMost(AmountLimit::new(LIMIT)),
+    ]);
     let statement = PaymentStatement {
         payment_id: Digest::new([9u8; 32]),
         amount: Amount {

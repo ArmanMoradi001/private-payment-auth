@@ -12,12 +12,13 @@ use std::panic::{self, AssertUnwindSafe};
 use ark_ed25519::Fr;
 use circuit::{deserialize, CircuitBuilder};
 use crypto_core::backend::{BackendId, Sha256Backend};
-use crypto_core::Digest;
 use mpc::PublicValue as MpcPublicValue;
 use mpcith::{decode_proof, decode_view, encoding::decode_challenge, encoding::decode_repetition};
 use payment::{Amount, AmountUnit, PaymentStatement};
-use policy::{CredentialPolicy, Policy};
-use proof::{deserialize_proof, serialize_proof, Prover, ProtocolConfig, Statement as ProofStatement};
+use policy::{AmountLimit, CredentialId, Policy};
+use proof::{
+    deserialize_proof, serialize_proof, ProtocolConfig, Prover, Statement as ProofStatement,
+};
 use proptest::prelude::*;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
@@ -145,31 +146,38 @@ fn share_count_bound_is_enforced() {
 #[test]
 fn policy_depth_bound_is_enforced() {
     // Build a linear And-chain far deeper than MAX_POLICY_DEPTH (100).
-    let mut policy = Policy::AmountAtMost { limit: 1 };
+    let mut policy = Policy::AmountAtMost(AmountLimit::new(1));
     for _ in 0..150 {
-        policy = Policy::And {
-            policies: vec![policy],
-        };
+        policy = Policy::And(vec![policy]);
     }
     assert_eq!(
         policy.validate(),
-        Err(policy::PolicyError::ExcessivePolicyDepth)
+        Err(policy::PolicyError::MaxDepthExceeded)
     );
 }
 
 #[test]
 fn policy_credential_count_bound_is_enforced() {
-    let policy = Policy::Threshold {
-        k: 1,
-        credentials: (0..1001)
-            .map(|_| CredentialPolicy {
-                expected_commitment: Digest::new([0u8; 32]),
-            })
-            .collect(),
-    };
+    // Spread 1001 credentials across a balanced binary `And` tree so no
+    // single combinator exceeds its child limit; the global credential
+    // count (cap 1000) is the first limit reached.
+    let mut stack: Vec<Policy> = (0..1001)
+        .map(|i| {
+            let mut arr = [0u8; 32];
+            arr[0] = (i as u8).wrapping_add(1);
+            arr[31] = 0x55;
+            Policy::Credential(CredentialId::new(arr))
+        })
+        .collect();
+    while stack.len() > 1 {
+        let a = stack.remove(0);
+        let b = stack.remove(0);
+        stack.push(Policy::And(vec![a, b]));
+    }
+    let policy = stack.into_iter().next().unwrap();
     assert_eq!(
         policy.validate(),
-        Err(policy::PolicyError::ExcessiveCredentials)
+        Err(policy::PolicyError::MaxCredentialsExceeded)
     );
 }
 
