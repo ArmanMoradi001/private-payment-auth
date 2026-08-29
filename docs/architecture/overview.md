@@ -1,13 +1,14 @@
 # Architecture Overview
 
-> **Status: Phase 9 — post-quantum-ready cryptographic backend abstraction.**
-> All prior layers are implemented. Phase 9 introduces a `CryptoBackend`
-> trait behind `crypto-core` with two implementations — `Sha256Backend`
-> (the default, byte-compatible with the historical SHA-256 paths) and
-> `Shake256Backend` (a SHA-3 XOF) — and binds every proof and Fiat–Shamir
-> derivation to a single backend via a `BackendId`. SHA-256 remains the
-> default; the abstraction only *adds* backend choice. The `verifier` and
-> `sdk` crates remain *intended* architecture only.
+> **Status: Phase 11 — typed policy AST, normalization, and deterministic
+> compilation.** All prior layers are implemented. Phase 11 replaces the flat
+> Phase 7 policy model with a fully recursive typed `Policy` AST (`Threshold`
+> over arbitrary member policies, `And`, `Or`, `Credential`, `AmountAtMost`),
+> a single canonical `normalize` used by *both* the reference evaluator and the
+> circuit compiler (closing the evaluator/circuit disagreement caught by
+> property tests), a versioned injective encoding with a `PolicyId`, and a
+> compiler whose amount leaf is a genuine boolean so composition is sound. The
+> `verifier` and `sdk` crates remain *intended* architecture only.
 
 ## Purpose
 
@@ -191,36 +192,55 @@ Implemented in the new `mpcith` crate over `circuit`, `mpc`, and
 Fiat–Shamir is intentionally deferred; see ADR
 [0006](../decisions/0006-mpcith.md).
 
-## `policy` (Phase 7)
+## `policy` (Phase 11)
 
 Implemented in the `policy` crate over `crypto-core`, `circuit`, and
-`ark-ff`:
+`ark-ff`. The Phase 7 flat model (`Threshold {k, credentials}` + `AmountAtMost`
++ `And`/`Or`) is **replaced** by a fully recursive typed AST; see ADR
+[0011](../decisions/0011-policy-ast-and-normalization.md) and
+[policy-model.md](policy-model.md).
 
-- **Policy model** — a recursive [`Policy`] tree: `Threshold {k,
-  credentials}` over SHA-256-committed credentials, `AmountAtMost`,
-  and `And`/`Or` combinators. Structural validation rejects zero
-  thresholds, empty credential lists, `k > n`, and empty combinators.
-- **Canonical encoding + identity** — injective tag-prefixed encoding;
-  `PolicyId = SHA-256("private-payment-auth/policy/v1" ‖ encoding)`.
-  Equal ids imply equal policies.
-- **Deterministic compiler** — `compile(&Policy)` maps the tree onto a
-  plain `{+, ×}` circuit with fixed traversal/gate order, so equal
-  policies yield identical `CircuitId`s. Because there are no
-  comparison or hash gates (and the MPC layers can evaluate only
-  `Add`/`Mul` on shares), constraints use two arithmetic gadgets:
-  - *Fermat zero-indicator*: `x^(p−1) ∈ {0,1}` exactly, giving exact
-    credential-match booleans with no prover freedom.
-  - *Inverted exclusion product*: each leaf emits `w = X·aux` where
-    `X` vanishes exactly on the violating set; `w ≡ 0` when violated,
-    and `w = 1` is reachable via `aux = X⁻¹` exactly when satisfied.
-    Combinators compose these soundly (`a·b`, `a + b − a·b`).
-- **Input layouts** — `compile_with_layout` additionally returns
-  secret/public slot lists so consumers can assemble witness and
-  statement vectors positionally, plus per-auxiliary discriminant
-  wires for inversion.
+- **Typed AST** — `Policy` is `AmountAtMost(AmountLimit)`,
+  `Credential(CredentialId)` (the expected SHA-256 commitment digest, domain
+  `private-payment-auth/credential/v2`), `Threshold { k, members: Vec<Policy>
+  }`, `And(Vec<Policy>)`, or `Or(Vec<Policy>)`. Arbitrary nesting is allowed.
+- **Validation** — `validate` enforces depth (100), node (10k), credential
+  (1k), arity, and combinator-child (1k) bounds, plus `1 ≤ k ≤ members.len()`
+  and no duplicate credentials; it is panic-free and bounded.
+- **Single canonical normalization** — `normalize` (same-type flattening only,
+  encoding-sorted, dedup, singleton-collapse) is consumed by **both** the
+  reference evaluator and the circuit compiler, so `evaluate(p)` and
+  `circuit(p)` cannot disagree on canonical order. `normalize` is idempotent.
+- **Versioned encoding + identity** — injective tag-prefixed encoding
+  (`ENCODING_VERSION = 1`); `PolicyId = SHA-256(
+  "private-payment-auth/policy/v2" ‖ encoding)`. Equal ids imply equal
+  policies. `decode` is panic-free and trailing-byte-rejecting.
+- **Reference evaluator** — `evaluate(&policy, &witness)` returns
+  `AuthorizationResult` over the normalized tree; requires every credential
+  secret present (`WitnessMismatch` otherwise).
+- **Deterministic compiler** — `compile_with_layout::<Fr>(&Policy)` maps the
+  *normalized* tree onto a plain `{+, ×}` circuit with fixed gate order, so
+  equal policies yield identical `CircuitId`s. Two arithmetic gadgets:
+  - *Fermat zero-indicator* `x^(p−1) ∈ {0,1}` exactly — exact credential-match
+    and amount-window booleans with no prover freedom.
+  - *Combinator composition* — `And ⇒ a·b`, `Or ⇒ a + b − a·b`, `Threshold`
+    via an indicator product and a published booleanity constraint. The amount
+    leaf outputs a **genuine boolean** (`∏(1 − cᵢ^(p−1))` over its four
+    range-check constraints), so `Or`/`Threshold` composition is sound (it no
+    longer requires all amount bounds to hold).
+- **Input layouts** — `compile_with_layout` returns `secret_slots`,
+  `public_slots`, `auxiliary_targets`, and `range_check_outputs` (the count of
+  published booleanity constraints) so consumers assemble witness/statement
+  vectors positionally; auxiliaries are solved by a fixed-point iteration in
+  `build_inputs` (nested thresholds depend on inner roots).
+- **Equivalence property-tested** — `tests/policy_property_tests.rs` enforces
+  `circuit_never_accepts_what_evaluator_rejects` and `satisfying_witness_agrees`
+  over thousands of random policies; fuzz targets cover `decode`/`validate`/
+  `normalize`/`compile`.
 
 See ADR [0008](../decisions/0008-private-authorization.md) for the
-authorization-relation design and its documented limits.
+authorization-relation design, and [0011](../decisions/0011-policy-ast-and-normalization.md)
+for the Phase 11 rationale.
 
 ## `payment` (Phase 7)
 

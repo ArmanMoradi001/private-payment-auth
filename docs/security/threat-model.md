@@ -286,8 +286,37 @@ envelope:
    Production requires an arithmetizable hash (e.g., Poseidon/
    Rescue-style permutation) inside the circuit.
 3. **Parameterization is provisional.** `AUTHORIZATION_REPETITIONS =
-   12` gives per-artifact forgery probability ≈ (1/3)¹² ≈ 1.9·10⁻⁶;
-   production parameters await the cost study phase.
+    12` gives per-artifact forgery probability ≈ (1/3)¹² ≈ 1.9·10⁻⁶;
+    production parameters await the cost study phase.
+
+### Phase 11 update (typed AST, normalization, deterministic compilation)
+
+Phase 11 replaced the flat Phase 7 policy model with a recursive typed `Policy`
+AST and a single `normalize` form consumed by **both** the reference evaluator
+and the circuit compiler. Consequences for this threat catalog:
+
+- **RESOLVED: evaluator/circuit disagreement.** The Phase 7 compiler
+  normalized but the evaluator did not, and the compiler's normalization
+  incorrectly flattened *cross-type* combinators (`Or([And([…])])` →
+  `Or([…])`), so the circuit could accept what the evaluator rejected. Both
+  sides now normalize identically (same-type flattening only); equivalence is
+  enforced by property tests (`circuit_never_accepts_what_evaluator_rejects`),
+  so a passing proof corresponds to a real policy satisfaction.
+- **RESOLVED: unsound amount composition.** The Phase 7 amount leaf returned a
+  constant `1` and published its range checks as a global ∧, which under
+  `Or`/`Threshold` required *all* amount bounds to hold. The amount leaf now
+  outputs a genuine boolean `b = ∏(1 − cᵢ^(p−1))`, so composition requires only
+  the selected branch's bound — sound under `And`/`Or`/`Threshold`.
+- **UNCHANGED: in-circuit credential binding is still a placeholder.** The
+  credential commitment is supplied to the circuit as a secret-input field
+  element checked by digest equality; the real SHA-256 runs outside the
+  circuit. A malicious prover with custom tooling can still satisfy a
+  credential leaf without the preimage. See
+  [policy-security.md](policy-security.md) for the full open limitation.
+- **NEW invariant (regressible):** verifier-side `policy_public_inputs` must
+  normalize the policy, because `normalize` reorders `Threshold` members by
+  encoding. This is covered by `payment` integration tests and the property
+  suite; a regression would surface as a `StatementMismatch` in honest runs.
 
 ### Replay protection model (Phase 8)
 
