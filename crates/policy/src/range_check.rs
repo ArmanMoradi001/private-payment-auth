@@ -68,7 +68,7 @@ pub type RangeCheckOutputs = [NodeId; 4];
 ///
 /// # Errors
 ///
-/// Returns [`PolicyError::CircuitCompilationFailed`] if a gate
+/// Returns [`PolicyError::CompilationFailure`] if a gate
 /// references an undefined node (an internal invariant).
 pub fn prove_bounded_difference<F: PrimeField>(
     builder: &mut CircuitBuilder<F>,
@@ -105,7 +105,7 @@ fn emit_side<F: PrimeField>(
         // Reconstruction weight: b · 2^index.
         let weight = 1u64
             .checked_shl(index as u32)
-            .ok_or(PolicyError::CircuitCompilationFailed)?;
+            .ok_or(PolicyError::CompilationFailure)?;
         let weighted = mul_by_constant(builder, *bit, F::from(weight))?;
         reconstruction = add_gate(builder, reconstruction, weighted)?;
     }
@@ -146,7 +146,7 @@ fn add_gate<F: PrimeField>(
 ) -> Result<NodeId, PolicyError> {
     builder
         .add(a, b)
-        .map_err(|_| PolicyError::CircuitCompilationFailed)
+        .map_err(|_| PolicyError::CompilationFailure)
 }
 
 fn mul_gate<F: PrimeField>(
@@ -156,7 +156,7 @@ fn mul_gate<F: PrimeField>(
 ) -> Result<NodeId, PolicyError> {
     builder
         .mul(a, b)
-        .map_err(|_| PolicyError::CircuitCompilationFailed)
+        .map_err(|_| PolicyError::CompilationFailure)
 }
 
 /// `a − b` as `a + (−1)·b`.
