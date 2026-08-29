@@ -1,15 +1,18 @@
 //! The prover's private witness.
 //!
-//! [`PrivateWitness`] carries everything a payment authorization
-//! proves knowledge of: the credential secrets backing the policy's
+//! [`PrivateWitness`] carries everything a payment authorization proves
+//! knowledge of: the credential secrets backing the policy's
 //! commitments, the payment amount, and the binary digit witnesses for
-//! the sound range check (`policy::range_check`). It never enters any
-//! statement or proof artifact; it feeds the proving pipeline and is
-//! dropped (zeroized) afterwards.
+//! the sound range check. It never enters any statement or proof
+//! artifact; it feeds the proving pipeline and is dropped (zeroized)
+//! afterwards.
+//!
+//! Credential secrets are stored in the policy's canonical
+//! (depth-first) order of [`Policy::Credential`] leaves, matching the order the
+//! compiler consumes them.
 
 use crypto_core::SecretBytes;
-use policy::range_check::AMOUNT_BIT_LEN;
-use policy::Policy;
+use policy::{credential_commitment, AmountLimit, CredentialId, Policy};
 use zeroize::Zeroize;
 
 use crate::amount::Amount;
@@ -22,26 +25,21 @@ pub const MAX_CREDENTIAL_SECRET_LEN: usize = 4096;
 #[derive(Clone)]
 pub struct PrivateWitness {
     /// Credential secrets in the policy's canonical (depth-first)
-    /// order; one per [`policy::CredentialPolicy`].
+    /// order; one per [`Policy::Credential`] leaf.
     pub credential_secrets: Vec<SecretBytes>,
     /// The payment amount being authorized.
     pub amount: Amount,
     /// Little-endian binary digits of `amount.value`, as consumed by
     /// the range-check gadget (`SecretSlot::AmountBit`).
-    pub amount_bits: [bool; AMOUNT_BIT_LEN],
+    pub amount_bits: [bool; policy::AMOUNT_BIT_LEN],
     /// Little-endian binary digits of `limit − amount.value` for the
-    /// policy's amount cap(s), as consumed by
-    /// `SecretSlot::DifferenceBit`.
-    pub difference_bits: [bool; AMOUNT_BIT_LEN],
+    /// policy's amount cap(s), as consumed by `SecretSlot::DifferenceBit`.
+    pub difference_bits: [bool; policy::AMOUNT_BIT_LEN],
 }
 
 impl PrivateWitness {
     /// Builds a witness with honest digit decompositions relative to
-    /// `limit` (the policy's amount cap).
-    ///
-    /// For policies whose amount leaves declare several distinct
-    /// limits, only one difference decomposition can be supplied; use
-    /// distinct caps in separate policies or identical limits.
+    /// `limit` (the policy's first amount cap).
     #[must_use]
     pub fn new(credentials: Vec<SecretBytes>, amount: Amount, limit: u64) -> Self {
         Self {
@@ -62,7 +60,7 @@ impl PrivateWitness {
     /// - [`PaymentError::MalformedCredentialSecret`] for empty secrets
     ///   or secrets beyond [`MAX_CREDENTIAL_SECRET_LEN`].
     pub fn validate(&self, policy: &Policy) -> Result<(), PaymentError> {
-        let required = required_credentials(policy)?;
+        let required = policy_credential_ids(policy).len();
         if self.credential_secrets.len() != required {
             return Err(PaymentError::WitnessCountMismatch);
         }
@@ -72,6 +70,27 @@ impl PrivateWitness {
             }
         }
         Ok(())
+    }
+
+    /// Builds the typed [`policy::PolicyWitness`] consumed by the
+    /// reference evaluator and circuit compiler.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PaymentError::WitnessCountMismatch`] if the secret
+    /// count disagrees with the policy.
+    pub fn to_policy_witness(
+        &self,
+        policy: &Policy,
+    ) -> Result<policy::PolicyWitness, PaymentError> {
+        self.validate(policy)?;
+        let ids = policy_credential_ids(policy);
+        let mut witness =
+            policy::PolicyWitness::new().with_amount(AmountLimit::new(self.amount.value));
+        for (id, secret) in ids.into_iter().zip(self.credential_secrets.iter()) {
+            witness = witness.with_credential(id, secret.clone());
+        }
+        Ok(witness)
     }
 }
 
@@ -105,22 +124,30 @@ impl Drop for PrivateWitness {
     }
 }
 
-/// Counts the credentials a witness must supply, in canonical order.
-///
-/// # Errors
-///
-/// Returns [`crate::error::PaymentError::InvalidPolicy`] when the tree
-/// is structurally invalid.
-pub fn required_credentials(policy: &Policy) -> Result<usize, PaymentError> {
+/// Returns the credential ids in the policy's canonical (depth-first)
+/// order — the order in which [`PrivateWitness::credential_secrets`]
+/// must be supplied.
+#[must_use]
+pub fn policy_credential_ids(policy: &Policy) -> Vec<CredentialId> {
+    let mut ids = Vec::new();
+    collect(policy, &mut ids);
+    ids
+}
+
+fn collect(policy: &Policy, ids: &mut Vec<CredentialId>) {
     match policy {
-        Policy::Threshold { credentials, .. } => Ok(credentials.len()),
-        Policy::AmountAtMost { .. } => Ok(0),
-        Policy::And { policies } | Policy::Or { policies } => {
-            let mut total = 0;
-            for sub in policies {
-                total += required_credentials(sub)?;
+        Policy::Credential(id) => ids.push(*id),
+        Policy::AmountAtMost(_) => {}
+        Policy::Threshold { members, .. } | Policy::And(members) | Policy::Or(members) => {
+            for member in members {
+                collect(member, ids);
             }
-            Ok(total)
         }
     }
+}
+
+/// Recomputes a credential commitment; exposed for tests and tooling.
+#[must_use]
+pub fn recompute_commitment(secret: &crypto_core::SecretBytes) -> crypto_core::Digest {
+    credential_commitment(secret)
 }

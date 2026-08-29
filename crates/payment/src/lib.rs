@@ -28,8 +28,9 @@ pub use error::PaymentError;
 pub use payment::{Payment, NONCE_LEN as PAYMENT_NONCE_LEN, PAYMENT_ID_DOMAIN, PAYMENT_ID_LEN};
 pub use proof::PROTOCOL_VERSION;
 pub use range_check::{circuit_range_check_outputs, decompose, reference_range_check};
-pub use relation::{recompute_commitment, AuthorizationRelation};
+pub use relation::AuthorizationRelation;
 pub use statement::{
     PaymentStatement, StatementError, NONCE_LEN as STATEMENT_NONCE_LEN, STATEMENT_VERSION,
 };
+pub use witness::recompute_commitment;
 pub use witness::{PrivateWitness, MAX_CREDENTIAL_SECRET_LEN};
