@@ -76,14 +76,12 @@ fn verify_commitment_uses_constant_time_comparison() {
     let sb = SecretBytes::new(vec![0xABu8; 32]);
     let commitment: ViewCommitment = commit_view::<Sha256Backend>(&view, &sb).unwrap();
 
-    let ok = verify_commitment::<Sha256Backend>(&commitment, &view, &sb)
-        .expect("verify runs");
+    let ok = verify_commitment::<Sha256Backend>(&commitment, &view, &sb).expect("verify runs");
     assert!(ok, "valid commitment must verify");
 
     // Tamper with the view; the constant-time comparison must reject it.
     let mut bad = view.clone();
     bad.input_shares[0] = Fr::from(999u64);
-    let ok_bad = verify_commitment::<Sha256Backend>(&commitment, &bad, &sb)
-        .expect("verify runs");
+    let ok_bad = verify_commitment::<Sha256Backend>(&commitment, &bad, &sb).expect("verify runs");
     assert!(!ok_bad, "tampered view must not verify");
 }

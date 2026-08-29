@@ -10,8 +10,8 @@
 //! Fiat–Shamir transform is deliberately deferred (ADR 0006).
 
 use ark_ff::{UniformRand, Zero};
-use crypto_core::backend::{CryptoBackend, Sha256Backend};
 use core::fmt;
+use crypto_core::backend::{CryptoBackend, Sha256Backend};
 use crypto_core::SecretBytes;
 use mpc::ShareContext;
 use rand_core::CryptoRngCore;

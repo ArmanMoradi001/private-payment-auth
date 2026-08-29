@@ -9,7 +9,6 @@
 use ark_ff::Zero;
 use zeroize::Zeroize;
 
-
 /// A plaintext field element that is known publicly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicValue<F>(F);

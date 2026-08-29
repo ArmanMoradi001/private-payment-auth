@@ -10,13 +10,11 @@ use circuit::{evaluate_reference, Circuit, CircuitBuilder, CircuitId, NodeId};
 use crypto_core::{commit, open, CommitmentRandomness, Digest, SecretBytes, Sha256Backend};
 use mpc::PublicValue;
 use mpcith::{
-    MpcithProver, MpcithVerifier, RandomChallengeSource, RepetitionId, Statement as MpcithStatement,
-    VerificationResult, ViewCommitment,
+    MpcithProver, MpcithVerifier, RandomChallengeSource, RepetitionId,
+    Statement as MpcithStatement, VerificationResult, ViewCommitment,
 };
 use payment::range_check::{decompose, reference_range_check};
-use proof::{
-    FiatShamirChallengeGenerator, FsSession, Statement as ProofStatement,
-};
+use proof::{FiatShamirChallengeGenerator, FsSession, Statement as ProofStatement};
 use proptest::prelude::*;
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
@@ -109,9 +107,7 @@ proptest! {
 
 /// Builds a random, valid circuit along with its witness, public inputs, and
 /// the reference-evaluated expected outputs.
-fn random_circuit(
-    seed: u64,
-) -> (Circuit<Fr>, Vec<Fr>, Vec<Fr>, Vec<Fr>) {
+fn random_circuit(seed: u64) -> (Circuit<Fr>, Vec<Fr>, Vec<Fr>, Vec<Fr>) {
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let mut b = CircuitBuilder::<Fr>::new();
     let secret = b.secret_input();

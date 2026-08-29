@@ -13,8 +13,8 @@ use ark_ed25519::Fr;
 use circuit::{Circuit, CircuitBuilder};
 use mpc::PublicValue;
 use mpcith::{
-    Challenge, DeterministicChallengeSource, MpcithError, MpcithProver, MpcithProof, MpcithVerifier,
-    PartyId, Statement as MpcithStatement, VerificationResult,
+    Challenge, DeterministicChallengeSource, MpcithError, MpcithProof, MpcithProver,
+    MpcithVerifier, PartyId, Statement as MpcithStatement, VerificationResult,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
@@ -114,8 +114,14 @@ fn ordered_commit_then_finish_produces_valid_proof() {
     let mut repetitions = Vec::with_capacity(partials.len());
     for (i, partial) in partials.iter().enumerate() {
         let hidden = PartyId::new((i % 3) as u8).unwrap();
-        let challenge = Challenge { hidden_party: hidden };
-        repetitions.push(prover.finish_repetition(partial, challenge).expect("finish"));
+        let challenge = Challenge {
+            hidden_party: hidden,
+        };
+        repetitions.push(
+            prover
+                .finish_repetition(partial, challenge)
+                .expect("finish"),
+        );
     }
     let proof = MpcithProof { repetitions };
 

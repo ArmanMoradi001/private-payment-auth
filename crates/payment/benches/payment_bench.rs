@@ -10,7 +10,7 @@ use payment::{
     authorize_payment, payment_circuit_id, verify_payment_authorization, Amount, AmountUnit,
     PaymentStatement, PrivateWitness, PROTOCOL_VERSION,
 };
-use policy::{credential_commitment, CredentialPolicy, Policy};
+use policy::{credential_commitment, AmountLimit, CredentialId, Policy, ThresholdK};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
@@ -18,21 +18,22 @@ const LIMIT: u64 = 100;
 
 fn policy_2_of_3() -> (Policy, Vec<SecretBytes>) {
     let mut secrets = Vec::new();
-    let credentials = (0..3)
+    let members: Vec<Policy> = (0..3)
         .map(|_| {
             let secret = SecretBytes::new(vec![secrets.len() as u8 + 1, 0xbe, 0xef]);
             secrets.push(secret.clone());
-            CredentialPolicy {
-                expected_commitment: credential_commitment(&secret),
-            }
+            Policy::Credential(CredentialId::from_commitment(credential_commitment(
+                &secret,
+            )))
         })
         .collect();
-    let policy = Policy::And {
-        policies: vec![
-            Policy::Threshold { k: 2, credentials },
-            Policy::AmountAtMost { limit: LIMIT },
-        ],
-    };
+    let policy = Policy::And(vec![
+        Policy::Threshold {
+            k: ThresholdK::new(2),
+            members,
+        },
+        Policy::AmountAtMost(AmountLimit::new(LIMIT)),
+    ]);
     (policy, secrets)
 }
 

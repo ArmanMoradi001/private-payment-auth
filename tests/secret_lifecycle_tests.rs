@@ -177,7 +177,9 @@ fn mpcith_repetition_debug_redacted() {
     let rep = Repetition {
         id: RepetitionId::new(0),
         commitments: Vec::<ViewCommitment>::new(),
-        challenge: Challenge { hidden_party: PartyId::new(1).unwrap() },
+        challenge: Challenge {
+            hidden_party: PartyId::new(1).unwrap(),
+        },
         opened_views: vec![],
         hidden_output_shares: vec![Fr::from(314159u64)],
         hidden_broadcasts: vec![],
@@ -190,7 +192,9 @@ fn mpcith_repetition_debug_redacted() {
 fn proof_repetition_debug_redacted() {
     let pr = ProofRepetition::new(
         Vec::<ViewCommitment>::new(),
-        Challenge { hidden_party: PartyId::new(1).unwrap() },
+        Challenge {
+            hidden_party: PartyId::new(1).unwrap(),
+        },
         Vec::<PartyView>::new(),
         Vec::<SecretBytes>::new(),
         Vec::<Fr>::new(),

@@ -13,8 +13,8 @@ use mpcith::{Challenge, PartyId, RepetitionId};
 use proof::fiat_shamir::{FiatShamirChallengeGenerator, FsSession};
 use proof::ChallengeGenerator;
 use proof::{
-    NonInteractiveProof, ProofError, ProofRepetition, Prover, ProtocolConfig, Statement, Verifier,
-    VerificationResult,
+    NonInteractiveProof, ProofError, ProofRepetition, ProtocolConfig, Prover, Statement,
+    VerificationResult, Verifier,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
