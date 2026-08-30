@@ -36,6 +36,11 @@ pub enum SdkError {
     /// The artifact's cryptographic backend id is one this SDK does
     /// not support.
     BackendUnsupported,
+    /// The verifier's configured backend does not match the backend
+    /// the authorization was generated under. This is a hard
+    /// configuration error (the caller must align their config with
+    /// the artifact's bound backend); never silently re-encoded.
+    BackendMismatch,
     /// The artifact's payment binding does not match the payment the
     /// caller expects.
     PaymentMismatch,
@@ -73,6 +78,9 @@ impl fmt::Display for SdkError {
             Self::BackendUnsupported => {
                 "authorization was produced under an unsupported cryptographic backend"
             }
+            Self::BackendMismatch => {
+                "verifier backend does not match the authorization's bound backend"
+            }
             Self::PaymentMismatch => {
                 "authorization payment binding does not match the expected payment"
             }
@@ -109,6 +117,7 @@ mod tests {
             SdkError::ArtifactMalformed,
             SdkError::VersionUnsupported,
             SdkError::BackendUnsupported,
+            SdkError::BackendMismatch,
             SdkError::PaymentMismatch,
             SdkError::PolicyMismatch,
             SdkError::CircuitMismatch,
