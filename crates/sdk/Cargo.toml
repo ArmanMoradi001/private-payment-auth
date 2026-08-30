@@ -6,7 +6,14 @@ license = "MIT OR Apache-2.0"
 description = "Cryptographic payment authorization project - client SDK"
 
 [dependencies]
-payment = { path = "../payment", version = "0.1.0" }
+crypto-core = { path = "../crypto-core", version = "0.1.0" }
+circuit = { path = "../circuit", version = "0.1.0" }
+mpcith = { path = "../mpcith", version = "0.1.0" }
 proof = { path = "../proof", version = "0.1.0" }
 policy = { path = "../policy", version = "0.1.0" }
-verifier = { path = "../verifier", version = "0.1.0" }
+payment = { path = "../payment", version = "0.1.0" }
+rand_core = "0.6"
+
+[dev-dependencies]
+mpc = { path = "../mpc", version = "0.1.0" }
+ark-ed25519 = "0.4"

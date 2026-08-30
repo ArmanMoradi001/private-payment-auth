@@ -1008,10 +1008,15 @@ dependencies = [
 name = "sdk"
 version = "0.1.0"
 dependencies = [
+ "ark-ed25519",
+ "circuit",
+ "crypto-core",
+ "mpc",
+ "mpcith",
  "payment",
  "policy",
  "proof",
- "verifier",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
