@@ -47,6 +47,20 @@ pub struct Authorization {
     proof: NonInteractiveProof,
 }
 
+impl Clone for Authorization {
+    fn clone(&self) -> Self {
+        Self {
+            version: self.version,
+            protocol_version: self.protocol_version,
+            backend_id: self.backend_id,
+            payment_id: self.payment_id,
+            policy_id: self.policy_id,
+            circuit_id: self.circuit_id,
+            proof: self.proof.clone(),
+        }
+    }
+}
+
 impl Authorization {
     /// Assembles an authorization artifact from its parts.
     ///

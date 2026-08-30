@@ -10,12 +10,16 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod authorize;
 pub mod config;
 pub mod error;
 pub mod identity;
 pub mod types;
+pub mod verification;
 
+pub use authorize::Sdk;
 pub use config::SdkConfig;
 pub use error::SdkError;
 pub use identity::{authorization_id, AuthorizationId};
 pub use types::{Authorization, AUTHORIZATION_VERSION};
+pub use verification::{VerificationFailure, VerificationResult};

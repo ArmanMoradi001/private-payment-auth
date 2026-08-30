@@ -14,8 +14,8 @@ use crypto_core::CryptoBackend;
 use crypto_core::Sha256Backend;
 
 /// Default protocol version expected of incoming authorizations and
-/// stamped into newly produced ones.
-pub const DEFAULT_PROTOCOL_VERSION: u8 = 1;
+/// stamped into newly produced ones. Mirrors `proof::PROTOCOL_VERSION`.
+pub const DEFAULT_PROTOCOL_VERSION: u8 = proof::PROTOCOL_VERSION;
 
 /// Default Fiat–Shamir repetition count.
 ///
@@ -94,7 +94,6 @@ mod tests {
     fn defaults_are_sensible() {
         let cfg = SdkConfig::default();
         assert_eq!(cfg.protocol_version(), DEFAULT_PROTOCOL_VERSION);
-        assert_eq!(cfg.protocol_version(), 1);
         assert_eq!(cfg.backend_id(), Sha256Backend::ID);
         assert_eq!(cfg.repetitions(), DEFAULT_REPETITIONS);
         assert_eq!(cfg.repetitions(), 12);
