@@ -13,6 +13,7 @@
 pub mod authorize;
 pub mod backend;
 pub mod config;
+pub mod encoding;
 pub mod error;
 pub mod identity;
 pub mod types;
@@ -21,6 +22,7 @@ pub mod verification;
 pub use authorize::Sdk;
 pub use backend::{backend_from_id, BackendType};
 pub use config::SdkConfig;
+pub use encoding::{deserialize, serialize, SUPPORTED_PROTOCOL_VERSIONS};
 pub use error::SdkError;
 pub use identity::{authorization_id, AuthorizationId};
 pub use types::{Authorization, AUTHORIZATION_VERSION};

@@ -23,6 +23,7 @@ mpcith = { path = "crates/mpcith", version = "0.1.0" }
 payment = { path = "crates/payment", version = "0.1.0" }
 policy = { path = "crates/policy", version = "0.1.0" }
 proof = { path = "crates/proof", version = "0.1.0" }
+sdk = { path = "crates/sdk", version = "0.1.0" }
 secret-sharing = { path = "crates/secret-sharing", version = "0.1.0" }
 verifier = { path = "crates/verifier", version = "0.1.0" }
 proptest = "1.4"
