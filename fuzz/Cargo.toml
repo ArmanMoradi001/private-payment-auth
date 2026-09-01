@@ -22,6 +22,8 @@ proof = { path = "../crates/proof" }
 payment = { path = "../crates/payment" }
 policy = { path = "../crates/policy" }
 secret-sharing = { path = "../crates/secret-sharing" }
+sdk = { path = "../crates/sdk" }
+verifier = { path = "../crates/verifier" }
 
 ark-ed25519 = "0.4"
 ark-ff = "0.4"
@@ -83,5 +85,17 @@ doc = false
 [[bin]]
 name = "fuzz_policy_compile"
 path = "fuzz_targets/fuzz_policy_compile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_authorization_decode"
+path = "fuzz_targets/fuzz_authorization_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_sdk_verify"
+path = "fuzz_targets/fuzz_sdk_verify.rs"
 test = false
 doc = false

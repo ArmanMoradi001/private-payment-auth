@@ -32,5 +32,6 @@ pub use relation::AuthorizationRelation;
 pub use statement::{
     PaymentStatement, StatementError, NONCE_LEN as STATEMENT_NONCE_LEN, STATEMENT_VERSION,
 };
+pub use witness::policy_credential_ids;
 pub use witness::recompute_commitment;
 pub use witness::{PrivateWitness, MAX_CREDENTIAL_SECRET_LEN};

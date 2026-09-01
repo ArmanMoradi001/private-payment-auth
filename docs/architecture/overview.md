@@ -1,14 +1,12 @@
 # Architecture Overview
 
-> **Status: Phase 11 — typed policy AST, normalization, and deterministic
-> compilation.** All prior layers are implemented. Phase 11 replaces the flat
-> Phase 7 policy model with a fully recursive typed `Policy` AST (`Threshold`
-> over arbitrary member policies, `And`, `Or`, `Credential`, `AmountAtMost`),
-> a single canonical `normalize` used by *both* the reference evaluator and the
-> circuit compiler (closing the evaluator/circuit disagreement caught by
-> property tests), a versioned injective encoding with a `PolicyId`, and a
-> compiler whose amount leaf is a genuine boolean so composition is sound. The
-> `verifier` and `sdk` crates remain *intended* architecture only.
+> **Status: Phase 12 — Public SDK, end-to-end tests, fuzzing,
+> benchmarks, and architecture documentation.** The `sdk` crate is
+> now the project's single stable public entry point. It is a thin
+> orchestration layer over `payment`, `policy`, `proof`, `mpcith`,
+> `mpc`, and `crypto-core` and does not introduce any new
+> cryptographic primitive, MPC protocol, or proof system. All
+> prior phases are implemented and tested.
 
 ## Purpose
 
@@ -337,18 +335,90 @@ See ADR [0010](../decisions/0010-crypto-backend.md) for the design
 rationale, and [cryptographic-assumptions.md](security/cryptographic-assumptions.md)
 for what backend agility does and does *not* guarantee.
 
+## `sdk` (Phase 12)
+
+The `sdk` crate is the project's single, stable public entry point.
+It is intentionally a **pure orchestration layer**: every
+cryptographic operation is delegated to the underlying crates; the
+SDK adds no new primitives, MPC protocols, or proof systems. Its
+responsibilities are:
+
+- **API surface.** Two workflows (`authorize` / `verify`) plus
+  canonical serialization (`serialize` / `deserialize`) and a
+  semantic identity hash (`authorization_id`). See
+  [sdk.md](sdk.md) for the full surface.
+- **Backend dispatch.** `authorize` reads `SdkConfig::backend_id`
+  and dispatches to the matching monomorphized backend; `verify`
+  reads the artifact's bound backend and dispatches the same way.
+  Mismatches are hard errors (`BackendMismatch`), never silent
+  fallbacks.
+- **Binding re-derivation.** `verify` recomputes `policy_id` and
+  `circuit_id` from the supplied `(normalized)` policy and
+  compares to the artifact's recorded values *before* attempting
+  proof verification, so the verifier fails fast on tampered
+  metadata.
+- **Self-verification.** When `SdkConfig::self_verify` is `true`
+  (the default), `authorize` runs an independent `verify` on the
+  freshly produced artifact and returns
+  `SdkError::SelfVerificationFailed` on mismatch. Cost: one extra
+  proof verification; benefit: pipeline bugs surface at the
+  producer instead of at the consumer.
+- **Canonical encoding.** A fixed-layout, secret-free byte format
+  (`crates/sdk/src/encoding.rs`) shared by the id-hash and the
+  decoder; versions, protocol versions, and backends are all
+  enforced on decode with hard errors.
+- **Stable surface.** `Sdk`, `SdkConfig`, `Authorization`,
+  `serialize` / `deserialize`, `authorization_id`,
+  `SdkError`, `VerificationResult`, `VerificationFailure`, and the
+  version constants are the documented stable surface. Lower
+  crates remain reachable via path dependencies for testing but
+  are not part of the stable contract.
+
+### Test and assurance coverage
+
+- **End-to-end** (`tests/sdk_e2e_tests.rs`) — happy-path workflows
+  and binding-failure surfaces from the public API.
+- **Adversarial** (`tests/sdk_adversarial_tests.rs`) — direct
+  mutations of every public binding field, plus replay,
+  truncation, and append attacks on the artifact bytes.
+- **Property** (`tests/sdk_property_tests.rs`) — randomized
+  policy/payment triples, including proof-bit-flip, policy
+  mutation, version mutation, and backend mutation resistance, and
+  the `authorize → verify` completeness property.
+- **Serialization** (`tests/sdk_serialization_tests.rs`) —
+  byte-level round-trips, distinct-authorization distinctness, and
+  every known-decoder-rejection mode.
+- **Fuzzing** (`fuzz/fuzz_targets/`) — `fuzz_authorization_decode`
+  (random bytes → `sdk::deserialize`) and `fuzz_sdk_verify` (random
+  bytes → `sdk::deserialize` → `sdk::verify`); both panic-free and
+  bounded-memory.
+- **Benchmarks** (`benches/sdk_bench.rs`) — `authorize` with and
+  without self-verify, `verify`-only, `serialize`/`deserialize`,
+  `authorization_id`, and a side-by-side pipeline comparator.
+
+See [sdk.md](sdk.md) and ADR
+[0012](../decisions/0012-sdk-public-boundary.md) for the full
+discussion.
+
 ## Key Invariants
 
 1. Only `crypto-core` may contain raw cryptographic primitives.
 2. `payment` and `verifier` depend on the *abstract* `proof` interface,
    never on `mpc` or `mpcith` directly.
-3. All code is `#![forbid(unsafe_code)]`.
-4. Every crate documents its future responsibility via crate-level docs.
-5. Circuit node ids are positional and topological; operands must
+3. The `sdk` crate is the project's only documented stable entry
+   point; no crate above it may depend on it, and it depends on
+   `verifier` and `policy` only through their public APIs.
+4. All code is `#![forbid(unsafe_code)]`.
+5. Every crate documents its future responsibility via crate-level docs.
+6. Circuit node ids are positional and topological; operands must
    reference strictly earlier nodes.
-6. The reference evaluator never calls MPC functions; equivalence
+7. The reference evaluator never calls MPC functions; equivalence
    between the two evaluators is property-tested, not assumed.
-7. The MPCitH verifier never calls prover code; it re-implements
+8. The MPCitH verifier never calls prover code; it re-implements
    circuit semantics from scratch.
-8. MPCitH repetitions share nothing: fresh input sharings, triples,
+9. MPCitH repetitions share nothing: fresh input sharings, triples,
    and commitment randomness per repetition.
+10. The SDK decoder never panics on malformed bytes; the
+    canonical decoder rejects truncation, trailing bytes, unknown
+    versions, and unknown backends with typed `SdkError`s, never
+    `unwrap`.

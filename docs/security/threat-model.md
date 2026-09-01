@@ -1,14 +1,13 @@
 # Threat Model (Skeleton)
 
-> **Status: Phase 10 — production hardening and audit.** Decoders are now
-> panic-free and bounded (see `tests/parser_robustness_tests.rs`); secret
-> containers implement `Zeroize`/`ZeroizeOnDrop` (added in Phase 10 to
-> `PartyView`, `PrivateWitness`, `Share`, `SharedValue`, `BeaverTriple`);
-> the MPCitH dependency graph is evaluated iteratively (no recursion
-> blow-up). The systematic threat-actor catalog below enumerates 10
-> adversary classes, each with its targeted asset, attack surface, existing
-> mitigation, and **honestly documented remaining risk** (we do *not* change
-> protocol semantics to paper over weaknesses — see
+> **Status: Phase 12 — public SDK, fuzzing, benchmarks, and
+> architecture documentation.** The `sdk` crate is the project's
+> single stable public entry point; it is a pure orchestration
+> layer over `payment`, `policy`, `proof`, `mpcith`, `mpc`, and
+> `crypto-core`. The threat catalog below enumerates 10 adversary
+> classes, each with its targeted asset, attack surface, existing
+> mitigation, and **honestly documented remaining risk** (we do
+> *not* change protocol semantics to paper over weaknesses — see
 > [phase-10-audit-report.md](phase-10-audit-report.md)).
 
 ## Assets
@@ -541,3 +540,120 @@ produced it.
 5. **Repetition count and FS security model unchanged.** Switching backend
    does not change the forgery probability `(1/3)^R` or the ROM/QROM
    assumptions of the Fiat–Shamir transformation.
+
+## SDK Public Boundary: Assumptions and Limitations (Phase 12)
+
+The `sdk` crate is the project's only documented stable entry
+point; see ADR [0012](../decisions/0012-sdk-public-boundary.md)
+for the full design rationale and [sdk.md](../architecture/sdk.md)
+for the API surface.
+
+### What is provided
+
+- **Stable, well-typed surface.** `Sdk`, `SdkConfig`,
+  `Authorization`, `serialize` / `deserialize`, `authorization_id`,
+  `SdkError`, `VerificationResult`, `VerificationFailure`, and the
+  version constants. Lower crates remain reachable via path
+  dependencies for testing but are not part of the documented
+  stable surface.
+- **No new cryptography.** Every cryptographic operation delegates
+  to the verified lower crates; the SDK adds no primitives, MPC
+  protocols, or proof systems.
+- **Hard-rejection backend handling.** `authorize` reads the
+  configured backend; an unknown configured backend is
+  `BackendUnsupported`, never a silent fallback. `verify` matches
+  the artifact's bound backend against the configured backend
+  *first*; a mismatch is `BackendMismatch`, never silently
+  re-encoded.
+- **Pre-cryptographic binding checks.** `verify` recomputes
+  `policy_id` and `circuit_id` from the supplied policy and
+  compares to the artifact before doing any cryptographic work,
+  so a tampered binding field fails fast.
+- **Self-verification default.** `authorize` re-runs an independent
+  `verify` on the freshly produced artifact by default; a
+  pipeline-internal inconsistency surfaces as
+  `SdkError::SelfVerificationFailed` instead of being silently
+  emitted.
+- **Strict, bounded decoder.** `deserialize` rejects truncation,
+  trailing bytes, unknown artifact versions, unknown protocol
+  versions, and unknown backends with typed `SdkError`s, never
+  via `unwrap`. The decoder is exercised by
+  `tests/sdk_serialization_tests.rs` and fuzzed by
+  `fuzz_authorization_decode` / `fuzz_sdk_verify`.
+- **Replay resistance at the statement layer.** A proof is
+  bound to a specific `(payment, policy, nonce, …)` tuple via
+  Fiat–Shamir, so the same proof bytes verify under no other
+  statement (including one differing only in nonce).
+
+### Explicit limitations — what the SDK is NOT
+
+1. **NOT a second verifier.** The SDK's `verify` delegates to
+   `payment::verify_payment_authorization` (and ultimately to
+   `proof::Verifier`). A bug in the SDK's orchestration layer
+   cannot masquerade as a bug in the cryptographic verifier
+   because the SDK is not a verifier; conversely, a bug in the
+   cryptographic verifier would also affect the SDK.
+2. **NOT a replay ledger.** Detecting that the *same* artifact is
+   presented twice for the *same* payment is not enforced by the
+   SDK. The cryptographic layer prevents re-binding to a different
+   statement; it does not prevent resubmission of an unchanged
+   authorization. A payment system that cares about
+   double-spend must maintain its own
+   `(payment_id, authorization_id)` ledger.
+3. **NOT a freshness oracle.** The artifact has no timestamp and
+   no expiry. Authorization freshness is the caller's clock and
+   policy.
+4. **NOT a backend auto-negotiator.** A SHA-256-bound artifact
+   presented under a SHAKE256-configured verifier returns
+   `BackendMismatch` and is *not* silently re-verified under the
+   configured backend. The workspace can ship separate
+   backend-specific SDK builds; the wire format is unambiguous.
+5. **NOT a signing authority on the binding fields.** The proof
+   itself is the only authentication of the `(payment, policy,
+   circuit)` triple. There is no external signature on the
+   artifact's metadata. A trusted relay could substitute a
+   different `(payment, policy)` pair the verifier expects, but
+   it could not produce a valid alternative.
+6. **NOT a generalized authorization framework.** The SDK ships
+   exactly the workspace's authorization relation; it has no
+   pluggable relation interface. Adding a new authorization
+   semantic is a new SDK build, not a new config flag.
+7. **NOT a constant-time verifier.** The MPCitH underlying
+   verifier operates on public reconstruction shares; the SDK
+   itself does not introduce secret-dependent branches but
+   inherits the underlying verifier's posture, which is *not*
+   formally constant-time-validated (see "remaining risk" below).
+8. **NOT a small artifact.** The current 12-repetition proof on
+   the canonical fixture occupies ≈17.9 MB on the wire. Reducing
+   size requires an explicit soundness/cost tradeoff study;
+   `DEFAULT_REPETITIONS` is a deliberately conservative default.
+
+### Replay protection model (Phase 12 update)
+
+Phase 8's replay model is unchanged: authorization artifacts are
+bound to a specific [`PaymentStatement`] whose canonical encoding
+includes a fresh 32-byte `nonce` and the semantic payment id
+(`SHA-256("private-payment-auth/payment/v1" ‖ payment_encoding)`).
+Both are public inputs of the bound circuit and therefore part of
+the Fiat–Shamir transcript: a proof for one statement verifies
+under no other statement, including re-submissions that differ
+only in nonce.
+
+What Phase 12 clarifies is the seam between this cryptographic
+uniqueness and the *application-level* uniqueness the SDK does
+*not* provide:
+
+- **Within one statement** (cryptographic): a proof that binds
+  one `(payment, policy, nonce)` tuple cannot be rebound to
+  another tuple. This is automatic.
+- **Across resubmissions** (application): the SDK will re-verify
+  the same artifact indefinitely. The caller must track observed
+  authorizations (typically keyed by
+  `authorization_id(payment, policy, auth)`) and refuse
+  duplicates.
+
+This seam is documented at the API level (`Sdk::verify` has no
+ledger parameter; the verification-only call is pure), at the
+artifact level (no timestamp / expiry field), at the ADR level
+(ADR 0012), and at the architecture level
+([sdk.md](../architecture/sdk.md)).

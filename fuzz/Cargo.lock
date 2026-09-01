@@ -435,7 +435,9 @@ dependencies = [
  "payment",
  "policy",
  "proof",
+ "sdk",
  "secret-sharing",
+ "verifier",
 ]
 
 [[package]]
@@ -531,6 +533,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdk"
+version = "0.1.0"
+dependencies = [
+ "circuit",
+ "crypto-core",
+ "mpcith",
+ "payment",
+ "policy",
+ "proof",
+ "rand_core",
+]
+
+[[package]]
 name = "secret-sharing"
 version = "0.1.0"
 dependencies = [
@@ -613,6 +628,15 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "verifier"
+version = "0.1.0"
+dependencies = [
+ "crypto-core",
+ "policy",
+ "proof",
+]
 
 [[package]]
 name = "version_check"

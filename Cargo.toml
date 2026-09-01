@@ -40,3 +40,8 @@ path = "tests/integration/smoke.rs"
 name = "dummy_bench"
 path = "benches/dummy_bench.rs"
 harness = false
+
+[[bench]]
+name = "sdk_bench"
+path = "benches/sdk_bench.rs"
+harness = false
