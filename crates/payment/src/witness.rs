@@ -109,12 +109,8 @@ impl Zeroize for PrivateWitness {
             secret.zeroize();
         }
         self.amount.value = 0;
-        for bit in &mut self.amount_bits {
-            *bit = false;
-        }
-        for bit in &mut self.difference_bits {
-            *bit = false;
-        }
+        self.amount_bits.fill(false);
+        self.difference_bits.fill(false);
     }
 }
 
