@@ -131,7 +131,7 @@ impl fmt::Debug for Authorization {
             .field("version", &self.version)
             .field("protocol_version", &self.protocol_version)
             .field("backend_id", &self.backend_id)
-            .field("payment_id", &format_args!("{:02x?}", &self.payment_id))
+            .field("payment_id", &format_args!("{:02x?}", self.payment_id))
             .field("policy_id", &self.policy_id)
             .field("circuit_id", &self.circuit_id)
             .field(
