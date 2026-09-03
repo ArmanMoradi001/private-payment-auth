@@ -1,291 +1,392 @@
-# MPC Payment — Privacy-Preserving Cryptographic Payment Authorization
+# Private Payment Auth
 
-Authorize payments by *proving* policy compliance, not by *revealing* secrets.
+Privacy-preserving payment authorization built in Rust using secure computation and zero-knowledge proofs.
 
-**Status: Phase 12 — Public SDK, end-to-end tests, fuzzing, benchmarks, and
-architecture documentation.**
+The project explores a simple cryptographic primitive with a practical goal:
 
-This workspace implements a zero-knowledge, MPC-in-the-Head (MPCitH)
-authorization pipeline: a prover holding credential secrets and amount
-witnesses produces a self-contained, immutable `Authorization` artifact
-attesting that a payment satisfies a spending policy. A verifier — a
-merchant, receiver, or auditor — checks that artifact from
-`(Payment, Policy, Authorization)` alone. No witness, no secret shares,
-no commitment randomness ever crosses the prover/verifier boundary.
+> Prove that a payment satisfies an authorization policy without revealing the private credentials and authorization data used to satisfy it.
 
-The stable entry point is `crates/sdk`, a pure orchestration layer with
-no new cryptography of its own. Everything cryptographic lives in the
-layers below it (`crypto-core`, `secret-sharing`, `mpc`, `mpcith`,
-`circuit`, `policy`, `payment`, `proof`, `verifier`).
+The current architecture combines additive secret sharing, MPC, MPC-in-the-Head (MPCitH), Fiat–Shamir, typed authorization policies, and a verifier-oriented SDK.
 
-## What is proven
+## Why this project exists
 
-The proven relation is, informally:
+Traditional payment authorization exposes the evidence of authorization.
 
-> *I know credential secrets `s₁…sₙ` and integer amount witnesses such
-> that `SHA-256(domain ‖ sᵢ) = CredentialIdᵢ` for the required
-> credentials, `0 ≤ amount ≤ limit < 2⁶⁴`, and the policy tree over
-> those leaves evaluates to true — all bound to this exact
-> `(payment_id, amount, recipient_commitment, policy, circuit, nonce)`.*
+For example, a system may require several signatures, reveal which parties approved a transaction, or expose internal spending rules.
 
-Concretely, `Sdk::authorize(&payment, &policy, &witness, &mut rng)`:
+Private Payment Auth takes a different approach.
 
-1. Validates the payment record and the policy shape.
-2. Normalizes the policy and derives `policy_id` / `circuit_id`.
-3. Builds a bound `PaymentStatement` (payment id, typed amount,
-   recipient commitment, policy/circuit ids, protocol version, nonce).
-4. Runs the plaintext `AuthorizationRelation` as a gate — refusal to
-   prove a non-satisfying witness.
-5. Compiles the normalized policy to an arithmetic circuit and proves
-   it through the abstract `proof` interface (MPCitH + Fiat–Shamir).
-6. Bundles the result into an immutable `Authorization`, optionally
-   self-verifying before returning.
+The prover holds the private witness and produces a proof that the authorization relation is satisfied. The verifier receives only the public statement and proof.
 
-`Sdk::verify(&payment, &policy, &auth)` re-derives every binding,
-fails fast on tampered metadata, and only then runs the cryptographic
-proof check. It takes no witness and no RNG; it is pure and stateless.
+Conceptually:
 
-## Privacy architecture
-
-Secrets stay on the prover side by construction, not by convention:
-
-- **Zero-knowledge execution via MPC-in-the-Head.** Each of `R`
-  repetitions simulates exactly 3 virtual parties over an
-  additive-sharing MPC layer on the ed25519 scalar field
-  (`ark_ed25519::Fr`, `p = 2²⁵² + 27742317777372353535851937790883648493`).
-  All three party views are committed (`SHA-256`,
-  domain `private-payment-auth/mpcith/view/v1`, fresh 32-byte
-  randomness) *before* the Fiat–Shamir challenge arrives; two views
-  are then opened. The hidden party appears only through commitments
-  plus public broadcast material. Per-repetition soundness error is
-  1/3; the default `R = 12` gives forgery probability ≈ `(1/3)¹² ≈
-  1.9·10⁻⁶`.
-- **Fiat–Shamir transcript binding.** Challenges are derived from
-  `DOMAIN_FS ‖ backend_id ‖ protocol_version ‖ statement ‖ circuit_id ‖
-  policy_id ‖ commitments`, so a proof for one statement verifies
-  under no other statement — including one differing only in nonce.
-  Security rests on the Fiat–Shamir random-oracle heuristic (ROM; QROM
-  analysis is out of scope).
-- **Credential commitments.** A credential is the digest
-  `SHA-256("private-payment-auth/credential/v2" ‖ secret)`. The
-  reference evaluator and circuit compiler share one commitment
-  function so they cannot drift.
-- **Secret hygiene.** `SecretBytes` / `CommitmentRandomness` are
-  `Zeroize` + `ZeroizeOnDrop` with redacted `Debug`
-  (`SecretBytes([REDACTED])`); `PartyView` and `PrivateWitness` wipe
-  on drop; shares redact their values. Digest and commitment
-  comparisons use `subtle::ConstantTimeEq`. Error types
-  (`CryptoCoreError`, `SdkError`, `VerificationFailure`) carry
-  categories, never secret bytes, share values, or proof internals.
-  There is no global RNG, no `SystemTime`, no `thread_rng` in library
-  code — only caller-supplied `CryptoRngCore`.
-- **Public by design.** Circuits carry structure only; transcript
-  hooks carry node ids, never values. `Authorization` bytes contain
-  no secret material — secrets were absorbed into view commitments
-  inside the proof.
-
-## Cryptographic construction
-
-| Layer | What it contributes |
-| --- | --- |
-| `crypto-core` | Only home of raw primitives: `Digest` (constant-time eq), `HashFunction` with length-framed `hash_domain`, hash commitments (`randomness ‖ len ‖ message`), canonical encodings, field arithmetic, Fiat–Shamir transcripts, pluggable `CryptoBackend` (`Sha256Backend` default, `Shake256Backend` SHA-3 XOF option). `#![forbid(unsafe_code)]`. |
-| `secret-sharing` | Classic Shamir sharing over the ed25519 scalar field. Information-theoretic hiding below threshold; no VSS, no complaint mechanism — honest-dealer model, documented in the threat model. |
-| `mpc` | Additive-sharing evaluation with Beaver triples; mirrors every circuit gate. Dual-evaluator property tests enforce `reference_eval == reveal(mpc_eval)`. |
-| `circuit` | Arithmetic DAG (`SecretInput`, `PublicInput`, `Constant`, `Add`, `Mul`) with positional topological ids, strict validation, injective canonical encoding, and hash-bound `CircuitId = SHA-256("private-payment-auth/circuit/v1" ‖ encoding)`. |
-| `mpcith` | 3-party commit-then-open proofs with an independent verifier that re-implements semantics from public data only. No secret leakage from proofs or transcripts by design. |
-| `proof` | Non-interactive `Prover` / `Verifier` over MPCitH: Fiat–Shamir transform, backend-pinned verification (`backend_id ≠ B::ID` rejected before any crypto work), serialization, repetition caps. |
-| `policy` | Typed recursive AST (`AmountAtMost`, `Credential`, `Threshold{k,members}`, `And`, `Or`), bounded validation, single canonical `normalize` shared by evaluator and compiler, versioned encoding, `PolicyId = SHA-256("private-payment-auth/policy/v2" ‖ encoding)`, deterministic compilation with Fermat zero-indicator gadgets (`x^(p−1) ∈ {0,1}`) and genuine-boolean amount leaves. |
-| `payment` | Domain types (`Amount` as exact `u64` + unit, `Payment` + semantic id, `PaymentStatement` with fixed-width encoding), `PrivateWitness` with dual 64-bit decompositions proving `0 ≤ amount ≤ limit` over the integers (no field wrap-around), statement-bound circuits (`amount`, recipient commitment, payment id multiplied into the root wire). |
-| `verifier` / `sdk` | Standalone verification and the stable public surface: `Sdk`, `SdkConfig`, `Authorization`, `serialize`/`deserialize`, `authorization_id`, `SdkError`, `VerificationResult`/`VerificationFailure`. Explicit backend dispatch, pre-cryptographic binding checks, default self-verification. |
-
-Backend agility note: `Shake256Backend` changes only the hash/XOF
-assumption (SHA-2 → SHA-3 sponge/XOF). It does not by itself make the
-system post-quantum — field, MPCitH soundness, and commitment framing
-are unchanged. High-assurance deployments should issue and require
-*both* a SHA-256 and a SHAKE256 proof. See
-[`docs/security/cryptographic-assumptions.md`](docs/security/cryptographic-assumptions.md).
-
-## The authorization artifact
-
-Fixed-layout, deterministic, secret-free (`114 + |proof|` bytes):
-
-| Field | Width | Binds |
-| --- | --- | --- |
-| `version` | 1 B | Always `AUTHORIZATION_VERSION` (rejected otherwise) |
-| `protocol_version` | 1 B | Must be in `SUPPORTED_PROTOCOL_VERSIONS` |
-| `backend_id` | 16 B | Proof-producing backend; verifier must align or get `BackendMismatch` |
-| `payment_id` | 32 B | Semantic payment id |
-| `policy_id` | 32 B | Normalized policy this proof satisfies |
-| `circuit_id` | 32 B | Circuit the normalized policy compiled to |
-| `proof` | variable | MPCitH non-interactive proof (≈17.9 MB at 12 repetitions on the canonical 2-of-3 + cap fixture) |
-
-Lifecycle: `authorize → serialize → deserialize (strict, panic-free,
-bounded) → verify → authorization_id` (domain-separated SHA-256 over
-the canonical encoding; equal ids ⟺ byte-identical bindings + proof).
-
-Verification order is fixed: backend alignment → version → policy/circuit
-re-derivation → payment binding → cryptographic check. Tampered metadata
-fails fast, before any proof work.
-
-Replay model: a proof is bound to one `(payment, policy, nonce)` tuple
-and cannot be rebound — but re-presenting the *same* artifact
-re-verifies. Double-spend / duplicate suppression is an
-application-layer ledger over `(payment_id, authorization_id)`, not a
-cryptographic property. Artifacts carry no timestamp or expiry. See
-[`docs/security/threat-model.md`](docs/security/threat-model.md).
-
-## Honest limitations
-
-This project documents what it does *not* yet provide:
-
-- Credential checks inside circuits compare commitment digests by field
-  equality; the real SHA-256 runs outside the circuit. A custom-tooled
-  malicious prover could satisfy a credential leaf without the
-  preimage. Production needs an arithmetization-friendly hash
-  (e.g. Poseidon/Rescue-style) in-circuit.
-- Soundness is probabilistic (`(1/3)^R`) under the Fiat–Shamir
-  heuristic — not a formally proven ROM/QROM reduction in this codebase.
-- Verifier correctness is assumed, not machine-checked. Zeroization
-  uses `Zeroize` without `mlock` / volatile-write guarantees; there is
-  no dudect/valgrind constant-time CI gate.
-- No replay ledger, no freshness oracle, no backend auto-negotiation,
-  no version migration path, no hybrid dual-hash proof (compose two
-  proofs manually if needed).
-
-## Assurance and hardening
-
-Security-first: correctness and audited dependencies over performance.
-Every change is gated by formatting, strict Clippy lints, debug +
-release tests, `cargo deny` (advisories, bans, licenses), and
-panic-free decoder discipline (`Err`, never `unwrap` on untrusted bytes).
-
-- `tests/*` — integration (`smoke`), policy/payment property suites,
-  cross-backend vectors, Fiat–Shamir / MPCitH / state-machine
-  regressions, constant-time and parser-robustness tests, SDK
-  end-to-end / adversarial / property / serialization suites.
-- `crates/payment/tests` — payment-level property and integration tests.
-- `fuzz/fuzz_targets/*` — `cargo-fuzz` over `decode_circuit`,
-  `decode_mpcith_proof`, `decode_payment`, `decode_proof`,
-  `decode_share`, `fuzz_authorization_decode`, `fuzz_sdk_verify`,
-  `fuzz_policy_{decode,validate,normalize,compile}`,
-  `policy_range_check`.
-- `benches/*`, `crates/payment/benches`, `crates/policy/benches` —
-  Criterion benchmarks including `sdk_bench` (authorize ±
-  self-verify, verify-only, encode/decode, `authorization_id`).
-- `docs/` — architecture (`overview`, `sdk`, `policy-model`,
-  `dependency-boundaries`), decisions (ADRs 0001–0012), security
-  (`threat-model` with a 10-actor catalog, `cryptographic-assumptions`,
-  `fuzzing`, `policy-security`, `randomness-audit`,
-  `clone-ownership-audit`).
-- `.github/workflows/ci.yml` + `scripts/run_local_ci.sh` — CI pipeline
-  and its local mirror. Pinned toolchain
-  (`rust-toolchain.toml`); `#![forbid(unsafe_code)]` everywhere.
-
-## Layout
-
-- `crates/sdk` — public SDK: `authorize`/`verify`/`serialize`/`deserialize`/`authorization_id`
-- `crates/payment` — payment domain types and end-to-end pipeline
-- `crates/policy` — typed policy AST, normalization, evaluator, compiler
-- `crates/proof` — non-interactive proof interface and backend binding
-- `crates/mpcith` — MPC-in-the-Head construction (3-party model)
-- `crates/mpc` — additive-sharing MPC layer over the ed25519 scalar field
-- `crates/circuit` — arithmetic DAG circuit representation
-- `crates/crypto-core` — primitives: hashing, commitments, secret containers, backends
-- `crates/secret-sharing` — Shamir secret sharing
-- `crates/verifier` — standalone verification entry point
-- `tests/*` — integration, property, adversarial, and SDK tests
-- `crates/payment/tests` — payment-level tests
-- `benches/*`, `crates/payment/benches`, `crates/policy/benches` — Criterion benchmarks
-- `fuzz/fuzz_targets/*` — cargo-fuzz targets (decode paths, verify, policy)
-- `docs/` — architecture, decisions (ADRs), security and threat model
-- `.github/workflows/ci.yml` — CI pipeline
-- `deny.toml`, `clippy.toml`, `rustfmt.toml` — lint/licensing policy
-- `rust-toolchain.toml` — pinned stable toolchain with `rustfmt` and `clippy`
-- `scripts/run_local_ci.sh` — local mirror of the CI checks
-
-## End-to-end in 30 seconds
-
-Add the SDK plus the domain types (secrets live in `crypto-core`):
-
-```toml
-[dependencies]
-sdk = { path = "crates/sdk" }
-payment = { path = "crates/payment" }
-policy = { path = "crates/policy" }
-crypto-core = { path = "crates/crypto-core" }
-rand_chacha = "0.3"
-rand_core = "0.6"
+```text
+Private credentials + private witness
+                |
+                v
+        Authorization policy
+                |
+                v
+       Arithmetic computation
+                |
+                v
+             MPC
+                |
+                v
+       MPC-in-the-Head
+                |
+                v
+          Fiat–Shamir
+                |
+                v
+          Proof artifact
+                |
+                v
+            Verifier
 ```
 
-The privacy boundary is the point of the example: the prover holds the
-witness, the verifier never sees it — only public bytes cross the wire.
+The verifier does not need the witness, secret shares, or commitment randomness.
 
-```rust,no_run
-use crypto_core::{Digest, SecretBytes};
-use payment::{Amount, AmountUnit, Payment, PrivateWitness};
-use policy::{credential_commitment, AmountLimit, CredentialId, Policy, ThresholdK};
-use rand_chacha::ChaCha20Rng;
-use rand_core::SeedableRng;
-use sdk::{authorization_id, deserialize, serialize, Sdk, SdkConfig, VerificationResult};
+## Cryptographic foundation
 
-// --- Prover side: (payment, policy, witness) -> bytes ---
-fn authorize(payment: &Payment, policy: &Policy, witness: &PrivateWitness) -> Vec<u8> {
-    let sdk = Sdk::new(SdkConfig::default());
-    let mut rng = ChaCha20Rng::seed_from_u64(7);
-    let auth = sdk.authorize(payment, policy, witness, &mut rng).unwrap();
-    // `witness` is zeroized on drop; `auth` carries no secret material.
-    serialize(&auth)
-}
+The implementation is deliberately layered.
 
-// --- Verifier side: (payment, policy, bytes) -> accept / reject ---
-fn verify(payment: &Payment, policy: &Policy, bytes: &[u8]) -> bool {
-    let sdk = Sdk::new(SdkConfig::default());
-    let auth = deserialize(bytes).expect("strict decoder rejects malformed bytes");
-    // Optional: deduplicate resubmissions with this stable id.
-    let _id = authorization_id(&auth);
-    matches!(sdk.verify(payment, policy, &auth), Ok(VerificationResult::Valid))
-}
-
-fn main() {
-    // 2-of-3 credentials plus a 100-cent cap.
-    let secrets: Vec<SecretBytes> = (0..3)
-        .map(|i| SecretBytes::new(vec![(i as u8) + 1, 0x0c, 0x0d]))
-        .collect();
-    let members: Vec<Policy> = secrets
-        .iter()
-        .map(|s| Policy::Credential(CredentialId::from_commitment(credential_commitment(s))))
-        .collect();
-    let policy = Policy::And(vec![
-        Policy::Threshold { k: ThresholdK::new(2), members },
-        Policy::AmountAtMost(AmountLimit::new(100)),
-    ]);
-    let payment = Payment {
-        version: 1,
-        payment_id: [0x42; 32],
-        amount: Amount { value: 75, unit: AmountUnit::Cents },
-        recipient_commitment: Digest::new([0x11; 32]),
-        nonce: [0x33; 32],
-    };
-
-    let bytes = authorize(&payment, &policy, &PrivateWitness::new(secrets, payment.amount, 100));
-    assert!(verify(&payment, &policy, &bytes));
-}
+```text
+crypto-core
+    |
+    v
+secret-sharing
+    |
+    v
+mpc
+    |
+    v
+circuit
+    |
+    v
+mpcith
+    |
+    v
+proof
+    |
+    v
+policy
+    |
+    v
+payment
+    |
+    v
+sdk
 ```
 
-See [`docs/architecture/sdk.md`](docs/architecture/sdk.md) for the
-full SDK surface, lifecycle, binding rules, and limitations,
-[`docs/architecture/overview.md`](docs/architecture/overview.md) for the
-layered design,
-[`docs/security/threat-model.md`](docs/security/threat-model.md) for the
-adversary catalog and remaining risks, and
-[`docs/decisions/0012-sdk-public-boundary.md`](docs/decisions/0012-sdk-public-boundary.md)
-for the public-boundary rationale.
+### `crypto-core`
+
+The cryptographic foundation.
+
+Provides:
+
+- typed digests
+- hashing and domain separation
+- hash-based commitments
+- canonical encoding
+- secure randomness interfaces
+- zeroizing secret containers
+- pluggable cryptographic backends
+
+The current backends include SHA-256 and SHAKE256.
+
+### `secret-sharing`
+
+Secret sharing primitives over the project field.
+
+The current implementation includes Shamir secret sharing with strict validation and explicit share encoding.
+
+### `mpc`
+
+Arithmetic MPC based on additive secret sharing and Beaver triples.
+
+The layer supports private inputs, public values, addition, multiplication, and explicit reveal operations.
+
+### `circuit`
+
+A deterministic arithmetic DAG.
+
+The circuit representation is intentionally small:
+
+- secret inputs
+- public inputs
+- constants
+- addition
+- multiplication
+
+Circuits have canonical encodings and deterministic identities.
+
+### `mpcith`
+
+The proof engine built from simulated MPC executions.
+
+The current construction uses three virtual parties. Their views are committed before the challenge, and only the challenged openings are revealed.
+
+### `proof`
+
+The non-interactive proof layer.
+
+Fiat–Shamir derives challenges from a domain-separated transcript that includes the statement, circuit identity, protocol version, cryptographic backend, repetition identifier, and commitments.
+
+### `policy`
+
+The authorization model.
+
+Policies currently express:
+
+- amount limits
+- credential ownership
+- threshold authorization
+- conjunction
+- disjunction
+
+Policies are typed, validated, normalized, canonically encoded, and compiled deterministically into arithmetic circuits.
+
+### `payment`
+
+The payment domain.
+
+Payment statements bind security-relevant payment data to the authorization proof, including payment identity, amount, recipient commitment, policy identity, circuit identity, protocol version, and nonce.
+
+### `sdk`
+
+The application-facing interface.
+
+The SDK is the preferred public entry point for:
+
+- authorization
+- verification
+- artifact serialization
+- artifact deserialization
+- authorization identity
+
+The SDK orchestrates the underlying layers without reimplementing cryptographic verification.
+
+## Privacy model
+
+The central privacy boundary is simple:
+
+### Prover
+
+The prover possesses:
+
+- credential secrets
+- private witness data
+- secret shares
+- MPC randomness
+
+These values are consumed locally during proof generation.
+
+### Verifier
+
+The verifier receives:
+
+- payment
+- policy
+- public statement
+- authorization artifact
+
+The verifier does not receive:
+
+- credential secrets
+- witness values
+- secret shares
+- commitment randomness
+- the hidden MPC party view
+
+The authorization artifact is designed to be self-contained and secret-free.
+
+## Authorization flow
+
+At a high level:
+
+```text
+Payment
+   +
+Policy
+   +
+Private Witness
+        |
+        v
+    SDK::authorize
+        |
+        v
+Policy normalization
+        |
+        v
+Circuit compilation
+        |
+        v
+Authorization relation
+        |
+        v
+MPC execution
+        |
+        v
+MPC-in-the-Head
+        |
+        v
+Fiat–Shamir
+        |
+        v
+Authorization artifact
+```
+
+Verification follows the opposite direction without any secret input:
+
+```text
+Payment
+   +
+Policy
+   +
+Authorization
+        |
+        v
+    SDK::verify
+        |
+        v
+Binding checks
+        |
+        v
+Circuit / policy verification
+        |
+        v
+Proof verification
+        |
+        v
+      Valid
+```
+
+## Example authorization policy
+
+A policy can express a rule such as:
+
+```text
+AND(
+    Threshold(2, [credential_1, credential_2, credential_3]),
+    AmountAtMost(100)
+)
+```
+
+The prover can demonstrate that two valid credentials satisfy the policy and that the payment amount is within the configured limit without revealing which private credentials were used.
+
+## Engineering principles
+
+This project treats cryptographic software as security-critical infrastructure.
+
+The implementation follows a few core principles:
+
+- keep cryptographic primitives isolated from application logic
+- prefer mature cryptographic implementations over handwritten primitives
+- make security-sensitive objects strongly typed
+- use canonical encodings for cryptographic statements
+- make protocol identities explicit and domain-separated
+- keep the verifier small and deterministic
+- maintain independent reference evaluators
+- test adversarially, not only for the happy path
+- fuzz untrusted parsing boundaries
+- document security assumptions and limitations explicitly
+
+The repository also enforces:
+
+- `#![forbid(unsafe_code)]`
+- strict Clippy checks
+- debug and release testing
+- dependency and license checks
+- property-based testing
+- fuzzing
+- deterministic test vectors
+- Criterion benchmarks
+
+## Post-quantum direction
+
+The architecture is designed to support a future post-quantum MPCitH profile.
+
+The project currently provides backend agility at the hash/XOF layer through SHA-256 and SHAKE256.
+
+This does **not** mean that the complete protocol is post-quantum secure.
+
+The current field, MPC construction, Fiat–Shamir assumptions, and other protocol components remain part of the security model. A genuine post-quantum profile requires a complete analysis of those components and their composition.
+
+## Current status
+
+The project is in active development.
+
+The cryptographic foundation, secret sharing, MPC runtime, arithmetic circuits, MPC-in-the-Head proof system, Fiat–Shamir layer, authorization policy model, payment domain, and SDK have been implemented and hardened through extensive testing.
+
+The codebase should currently be understood as:
+
+**production-oriented cryptographic engineering, not an independently audited production payment system.**
+
+External security review and formal analysis remain necessary before handling real funds or high-assurance deployments.
+
+## Repository layout
+
+```text
+crates/
+├── crypto-core/       Cryptographic primitives and backends
+├── secret-sharing/    Secret sharing
+├── mpc/               Arithmetic MPC
+├── circuit/           Arithmetic circuits
+├── mpcith/            MPC-in-the-Head
+├── proof/             Non-interactive proofs
+├── policy/            Authorization policies
+├── payment/           Payment domain
+├── verifier/          Standalone verification
+└── sdk/               Public application API
+
+tests/                 Integration, property, and adversarial tests
+fuzz/                  Fuzz targets
+benches/               Benchmarks
+docs/
+├── architecture/      System architecture
+├── security/          Threat model and security notes
+└── decisions/         Architecture decision records
+```
+
+## Security limitations
+
+The project intentionally documents its current limitations.
+
+Examples include:
+
+- the current credential commitment relation is not yet an arithmetization-friendly hash construction for fully in-circuit credential hashing
+- the MPCitH soundness parameters are provisional
+- Fiat–Shamir security is not accompanied by a formal QROM proof in this codebase
+- the verifier has not been machine-checked
+- replay and duplicate suppression remain application-level concerns
+- cryptographic memory protection does not currently provide guarantees such as `mlock`
+- the complete system has not undergone an independent external audit
+
+These limitations are part of the project's current security model and should not be ignored when evaluating deployment suitability.
+
+## Development
+
+The repository is organized as a Cargo workspace.
+
+Run the core verification suite with:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo test --workspace --release
+cargo audit
+cargo deny check
+cargo doc --workspace --no-deps
+cargo bench --no-run
+```
 
 ## License
 
-Dual-licensed under `MIT OR Apache-2.0`, as declared in `Cargo.toml`:
+Dual-licensed under:
 
-- [`LICENSE-MIT`](LICENSE-MIT)
-- [`LICENSE-APACHE`](LICENSE-APACHE)
+- MIT
+- Apache-2.0
 
-You may use this software under the terms of either license.
+See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
